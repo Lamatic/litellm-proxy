@@ -4,7 +4,9 @@ import os
 import json
 
 # Get the service URL from environment variable or use default for testing
-SERVICE_URL = os.environ.get('SERVICE_URL', 'https://litellm-testing-71891047326.us-central1.run.app')
+SERVICE_URL = os.environ.get('SERVICE_URL')
+if not SERVICE_URL:
+    raise ValueError("SERVICE_URL is not set")
 
 class TestLiteLLM:
     def test_openai_chat_completions(self):

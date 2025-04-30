@@ -1,4 +1,4 @@
-name: Test the litellm version
+name: Production - Deploy & Test Litellm on Cloud Run
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
         required: true
 
 jobs:
-  deploy:
+  deploy-prod:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,7 +25,7 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
-          gcloud run deploy litellm-testing  \
+          gcloud run deploy litellm-dev  \
             --image "litellm/litellm:${{ inputs.litellm_version }}" \
             --port 4000 \
             --region ${{ secrets.GCP_LOCATION }} \
@@ -36,17 +36,17 @@ jobs:
             --memory 512Mi \
             --cpu 1 \
             --min-instances 1 \
-            --concurrency 80 \
+            --concurrency 10 \
             --timeout 500 \
             --execution-environment gen1 \
-            --max-instances 100 \
+            --max-instances 10 \
             --allow-unauthenticated \
             --min-instances 1 \
             --ingress all \
             --min 1
       
-  test:
-    needs: deploy
+  test-prod:
+    needs: deploy-prod
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -66,16 +66,16 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SERVICE_URL: ${{ secrets.LITELLM_DEV_BASE_URL }}
         run: |
           # Wait for service to be fully available
-          ls
           sleep 10
           pytest ./tests/lamatic/test.py -v
 
       - name: Post litellm version to webhook
         run: |
           curl -X POST -H "Content-Type: application/json" \
-            -d '{"litellm_version": "${{ inputs.litellm_version }}", "status": "test-completed"}' \
+            -d '{"litellm_version": "${{ inputs.litellm_version }}", "status": "deployed", "environment": "development"}' \
             ${{ secrets.WEBHOOK_URL }}
   
             

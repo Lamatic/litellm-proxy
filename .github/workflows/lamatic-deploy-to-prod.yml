@@ -1,0 +1,81 @@
+name: Production - Deploy & Test Litellm on Cloud Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      litellm_version:
+        description: 'The litellm version to test, eg. v1.61.0'
+        required: true
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_DEPLOY_SA }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy litellm-prod  \
+            --image "litellm/litellm:${{ inputs.litellm_version }}" \
+            --port 4000 \
+            --region ${{ secrets.GCP_LOCATION }} \
+            --project ${{ secrets.GCP_PROJECT_ID  }} \
+            --service-account ${{ secrets.GCP_PROJECT_SA_NAME }} \
+            --set-env-vars STORE_MODEL_IN_DB=false \
+            --set-env-vars model_list=${{ secrets.LITELLM_MODEL_LIST }}  \
+            --memory 512Mi \
+            --cpu 2 \
+            --min-instances 1 \
+            --concurrency 80 \
+            --timeout 1000 \
+            --execution-environment gen1 \
+            --max-instances 100 \
+            --allow-unauthenticated \
+            --min-instances 1 \
+            --ingress all \
+            --min 1
+      
+  test-prod:
+    needs: deploy-prod
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest requests
+
+      - name: Run tests
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SERVICE_URL: ${{ secrets.LITELLM_PROD_BASE_URL }}
+        run: |
+          # Wait for service to be fully available
+          sleep 10
+          pytest ./tests/lamatic/test.py -v
+
+      - name: Post litellm version to webhook
+        run: |
+          curl -X POST -H "Content-Type: application/json" \
+            -d '{"litellm_version": "${{ inputs.litellm_version }}", "status": "deployed", "environment": "production"}' \
+            ${{ secrets.WEBHOOK_URL }}
+  
+            
