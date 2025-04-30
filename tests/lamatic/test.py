@@ -7,7 +7,7 @@ import json
 SERVICE_URL = os.environ.get('SERVICE_URL', 'https://litellm-testing-71891047326.us-central1.run.app')
 
 class TestLiteLLM:
-    def test_chat_completions(self):
+    def test_openai_chat_completions(self):
         response = requests.post(
             f"{SERVICE_URL}/chat/completions",
             headers={
@@ -23,8 +23,8 @@ class TestLiteLLM:
                     }
                 ],
                 "max_tokens": 1000,
-                "api_key": os.environ.get('ANTHROPIC_API_KEY'),
-                "model": "claude-3-7-sonnet-20250219"
+                "api_key": os.environ.get('OPENAI_API_KEY'),
+                "model": "gpt-4o-mini"
             }
         )
         assert response.status_code == 200
