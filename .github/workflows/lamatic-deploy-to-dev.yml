@@ -1,4 +1,4 @@
-name: Production - Deploy & Test Litellm on Cloud Run
+name: Development - Deploy & Test Litellm on Cloud Run
 
 on:
   workflow_dispatch:
