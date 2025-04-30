@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       previous_revision: ${{ steps.get-previous-revision.outputs.revision }}
+      current_revision: ${{ steps.deploy.outputs.revision }}
     steps:
       - uses: actions/checkout@v4
       
@@ -30,7 +31,7 @@ jobs:
         run: |
           REVISION=$(gcloud run services describe litellm-testing --region ${{ secrets.GCP_LOCATION }} --format="value(status.latestReadyRevisionName)")
           echo "revision=$REVISION" >> $GITHUB_OUTPUT
-          echo "New revision: $REVISION"
+          echo "Current revision: $REVISION"
           
       - name: Deploy to Cloud Run
         run: |
@@ -53,6 +54,9 @@ jobs:
             --min-instances 1 \
             --ingress all \
             --min 1
+          NEW_REVISION=$(gcloud run services describe litellm-testing --region ${{ secrets.GCP_LOCATION }} --format="value(status.latestReadyRevisionName)")
+          echo "revision=$NEW_REVISION" >> $GITHUB_OUTPUT
+          echo "New revision: $NEW_REVISION"
       
   test:
     needs: deploy
@@ -113,5 +117,11 @@ jobs:
           gcloud run services update-traffic litellm-testing \
             --region ${{ secrets.GCP_LOCATION }} \
             --to-revisions ${{ needs.deploy.outputs.previous_revision }}=100
-  
             
+      - name: Delete failed revision
+        if: steps.run-tests.outcome != 'success'
+        run: |
+          echo "Deleting failed revision: ${{ needs.deploy.outputs.current_revision }}"
+          gcloud run revisions delete ${{ needs.deploy.outputs.current_revision }} \
+            --region ${{ secrets.GCP_LOCATION }} \
+            --quiet
