@@ -25,7 +25,6 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
-          gcloud run deploy --help
           gcloud run deploy litellm-testing  \
             --image "litellm/litellm:${{ inputs.litellm_version }}" \
             --port 4000 \
@@ -42,5 +41,5 @@ jobs:
             --timeout 500 \
             --execution-environment gen1 \
             --max-instances 100
-            --min-instances 1
+            --min-instances 1 -y
             
