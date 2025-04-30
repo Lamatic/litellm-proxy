@@ -49,6 +49,9 @@ jobs:
     needs: deploy
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -65,8 +68,9 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           # Wait for service to be fully available
-          sleep 30
-          pytest tests/lamatic/test.py -v
+          ls
+          sleep 10
+          pytest ./tests/lamatic/test.py -v
 
       - name: Post litellm version to webhook
         run: |
