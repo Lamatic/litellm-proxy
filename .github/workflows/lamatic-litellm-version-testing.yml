@@ -1,0 +1,41 @@
+name: Test the litellm version
+
+on:
+  workflow_dispatch:
+    inputs:
+      litellm_version:
+        description: 'The litellm version to test, eg. v1.61.0'
+        required: true
+
+jobs:
+  update-cloud-run-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_DEPLOY_SA }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy --help
+          # gcloud run deploy litellm-testing  \
+          #   --image "litellm/litellm:${{ inputs.litellm_version }}" \
+          #   --platform managed \
+          #   --region ${{ secrets.GCP_LOCATION }} \
+          #   --port 4000 \
+          #   --memory 512Mi \
+          #   --cpu 1 \
+          #   --max-instances 1 \
+          #   --project ${{ secrets.GCP_PROJECT_ID  }} \
+          #   --service-account ${{ secrets.GCP_PROJECT_SA_NAME }} \
+          #   --set-env-vars PORT=4000 \
+          #   --set-env-vars STORE_MODEL_IN_DB=false \
+          #   --set-env-vars model_list=${{ inputs.litellm_version }}
