@@ -124,4 +124,5 @@ jobs:
           echo "Deleting failed revision: ${{ needs.deploy.outputs.current_revision }}"
           gcloud run revisions delete ${{ needs.deploy.outputs.current_revision }} \
             --region ${{ secrets.GCP_LOCATION }} \
+            --namespace ${{ secrets.GCP_PROJECT_ID  }} \
             --quiet
