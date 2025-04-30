@@ -10,6 +10,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    outputs:
+      previous_revision: ${{ steps.get-previous-revision.outputs.revision }}
     steps:
       - uses: actions/checkout@v4
       
@@ -23,6 +25,12 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
+      - name: Get previous revision
+        id: get-previous-revision
+        run: |
+          REVISION=$(gcloud run services describe litellm-testing --region ${{ secrets.GCP_LOCATION }} --format="value(status.latestReadyRevisionName)")
+          echo "revision=$REVISION" >> $GITHUB_OUTPUT
+          
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy litellm-testing  \
@@ -63,6 +71,7 @@ jobs:
           pip install pytest requests
 
       - name: Run tests
+        id: run-tests
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -72,11 +81,33 @@ jobs:
           ls
           sleep 10
           pytest ./tests/lamatic/test.py -v
+        continue-on-error: true
 
       - name: Post litellm version to webhook
         run: |
+          STATUS=${{ steps.run-tests.outcome }}
           curl -X POST -H "Content-Type: application/json" \
-            -d '{"litellm_version": "${{ inputs.litellm_version }}", "status": "test-completed", "environment": "testing"}' \
+            -d '{"litellm_version": "${{ inputs.litellm_version }}", "status": "test-$STATUS", "environment": "testing"}' \
             ${{ secrets.WEBHOOK_URL }}
+
+      - name: Rollback on test failure
+        if: steps.run-tests.outcome != 'success'
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_DEPLOY_SA }}
+          
+      - name: Configure gcloud for rollback
+        if: steps.run-tests.outcome != 'success'
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          
+      - name: Execute rollback
+        if: steps.run-tests.outcome != 'success'
+        run: |
+          echo "Tests failed. Rolling back to previous revision: ${{ needs.deploy.outputs.previous_revision }}"
+          gcloud run services update-traffic litellm-testing \
+            --region ${{ secrets.GCP_LOCATION }} \
+            --to-revisions ${{ needs.deploy.outputs.previous_revision }}=100
   
             
