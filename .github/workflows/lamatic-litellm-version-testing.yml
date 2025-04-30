@@ -39,6 +39,9 @@ jobs:
             --concurrency 80 \
             --timeout 500 \
             --execution-environment gen1 \
-            --max-instances 100
-            --min-instances 1 -y
+            --max-instances 100 \
+            --allow-unauthenticated \
+            --min-instances 1 \
+            --ingress all \
+            --min 1
             
