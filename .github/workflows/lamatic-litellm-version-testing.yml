@@ -26,16 +26,21 @@ jobs:
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy --help
-          # gcloud run deploy litellm-testing  \
-          #   --image "litellm/litellm:${{ inputs.litellm_version }}" \
-          #   --platform managed \
-          #   --region ${{ secrets.GCP_LOCATION }} \
-          #   --port 4000 \
-          #   --memory 512Mi \
-          #   --cpu 1 \
-          #   --max-instances 1 \
-          #   --project ${{ secrets.GCP_PROJECT_ID  }} \
-          #   --service-account ${{ secrets.GCP_PROJECT_SA_NAME }} \
-          #   --set-env-vars PORT=4000 \
-          #   --set-env-vars STORE_MODEL_IN_DB=false \
-          #   --set-env-vars model_list=${{ inputs.litellm_version }}
+          gcloud run deploy litellm-testing  \
+            --image "litellm/litellm:${{ inputs.litellm_version }}" \
+            --port 4000 \
+            --region ${{ secrets.GCP_LOCATION }} \
+            --project ${{ secrets.GCP_PROJECT_ID  }} \
+            --service-account ${{ secrets.GCP_PROJECT_SA_NAME }} \
+            --set-env-vars PORT=4000 \
+            --set-env-vars STORE_MODEL_IN_DB=false \
+            --set-env-vars model_list=${{ secrets.LITELLM_MODEL_LIST }}  \
+            --memory 512Mi \
+            --cpu 1 \
+            --min-instances 1 \
+            --concurrency 80 \
+            --timeout 500 \
+            --execution-environment gen1 \
+            --max-instances 100
+            --min-instances 1
+            
