@@ -30,6 +30,7 @@ jobs:
         run: |
           REVISION=$(gcloud run services describe litellm-testing --region ${{ secrets.GCP_LOCATION }} --format="value(status.latestReadyRevisionName)")
           echo "revision=$REVISION" >> $GITHUB_OUTPUT
+          echo "New revision: $REVISION"
           
       - name: Deploy to Cloud Run
         run: |
@@ -81,11 +82,14 @@ jobs:
           ls
           sleep 10
           pytest ./tests/lamatic/test.py -v
+          # Always fail
+          exit 1
         continue-on-error: true
 
       - name: Post litellm version to webhook
         run: |
           STATUS=${{ steps.run-tests.outcome }}
+          echo "STATUS: $STATUS"
           curl -X POST -H "Content-Type: application/json" \
             -d '{"litellm_version": "${{ inputs.litellm_version }}", "status": "test-$STATUS", "environment": "testing"}' \
             ${{ secrets.WEBHOOK_URL }}
