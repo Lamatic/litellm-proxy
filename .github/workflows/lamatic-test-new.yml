@@ -1,4 +1,4 @@
-name: Test New LiteLLM Version
+name: Test & Deploy LiteLLM Version
 
 on:
   workflow_dispatch:
@@ -6,6 +6,8 @@ on:
       litellm_version:
         description: 'The litellm version to test, eg. v1.61.0'
         required: true
+
+run-name: Testing version litellm - ${{ inputs.litellm_version }}
 
 jobs:
   test-deploy-cloudrun:
