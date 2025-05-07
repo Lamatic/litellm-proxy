@@ -82,7 +82,8 @@ jobs:
   
   deploy-production:
     name: Deploying litellm:${{ inputs.litellm_version }} to production
-    runs-on: run-unit-tests
+    runs-on: ubuntu-latest
+    needs: run-unit-tests
     steps:
       - uses: actions/checkout@v4
       
