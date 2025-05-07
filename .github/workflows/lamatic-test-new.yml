@@ -1,4 +1,4 @@
-name: Test LiteLLM Version on Cloud Run
+name: Test New LiteLLM Version - ${{ inputs.litellm_version }}
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
         required: true
 
 jobs:
-  deploy:
+  test-deploy-cloudrun:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,7 +23,7 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      - name: Deploy to Cloud Run
+      - name: Deploy to litellm test cloud run instance
         run: |
           gcloud run deploy litellm-testing  \
             --image "litellm/litellm:${{ inputs.litellm_version }}" \
@@ -45,8 +45,8 @@ jobs:
             --ingress all \
             --min 1
       
-  test:
-    needs: deploy
+  run-unit-tests:
+    needs: test-deploy-cloudrun
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -73,10 +73,11 @@ jobs:
           sleep 10
           pytest ./tests/lamatic/test.py -v
 
-      - name: Post litellm version to webhook
-        run: |
-          curl -X POST -H "Content-Type: application/json" \
-            -d '{"litellm_version": "${{ inputs.litellm_version }}", "status": "test-completed", "environment": "testing"}' \
-            ${{ secrets.WEBHOOK_URL }}
+      # - name: Post litellm version to webhook
+      #   run: |
+      #     curl -X POST -H "Content-Type: application/json" \
+      #       -d '{"litellm_version": "${{ inputs.litellm_version }}", "status": "test-completed", "environment": "testing"}' \
+      #       ${{ secrets.WEBHOOK_URL }}
   
             
+  
