@@ -1,11 +1,33 @@
-from typing import List, Literal, Optional, Tuple, Union, cast
+import json
+import uuid
+from typing import Any, List, Literal, Optional, Tuple, Union, cast
+
+import httpx
 
 import litellm
+from litellm.constants import RESPONSE_FORMAT_TOOL_NAME
+from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
+from litellm.litellm_core_utils.llm_response_utils.get_headers import (
+    get_response_headers,
+)
 from litellm.secret_managers.main import get_secret_str
-from litellm.types.llms.openai import AllMessageValues, ChatCompletionImageObject
-from litellm.types.utils import ModelInfoBase, ProviderSpecificModelInfo
+from litellm.types.llms.openai import (
+    AllMessageValues,
+    ChatCompletionImageObject,
+    ChatCompletionToolParam,
+    OpenAIChatCompletionToolParam,
+)
+from litellm.types.utils import (
+    ChatCompletionMessageToolCall,
+    Choices,
+    Function,
+    Message,
+    ModelResponse,
+    ProviderSpecificModelInfo,
+)
 
 from ...openai.chat.gpt_transformation import OpenAIGPTConfig
+from ..common_utils import FireworksAIException
 
 
 class FireworksAIConfig(OpenAIGPTConfig):
@@ -88,8 +110,12 @@ class FireworksAIConfig(OpenAIGPTConfig):
         model: str,
         drop_params: bool,
     ) -> dict:
-
         supported_openai_params = self.get_supported_openai_params(model=model)
+        is_tools_set = any(
+            param == "tools" and value is not None
+            for param, value in non_default_params.items()
+        )
+
         for param, value in non_default_params.items():
             if param == "tool_choice":
                 if value == "required":
@@ -98,18 +124,29 @@ class FireworksAIConfig(OpenAIGPTConfig):
                 else:
                     # pass through the value of tool choice
                     optional_params["tool_choice"] = value
-            elif (
-                param == "response_format" and value.get("type", None) == "json_schema"
-            ):
-                optional_params["response_format"] = {
-                    "type": "json_object",
-                    "schema": value["json_schema"]["schema"],
-                }
+            elif param == "response_format":
+                if (
+                    is_tools_set
+                ):  # fireworks ai doesn't support tools and response_format together
+                    optional_params = self._add_response_format_to_tools(
+                        optional_params=optional_params,
+                        value=value,
+                        is_response_format_supported=False,
+                        enforce_tool_choice=False,  # tools and response_format are both set, don't enforce tool_choice
+                    )
+                elif "json_schema" in value:
+                    optional_params["response_format"] = {
+                        "type": "json_object",
+                        "schema": value["json_schema"]["schema"],
+                    }
+                else:
+                    optional_params["response_format"] = value
             elif param == "max_completion_tokens":
                 optional_params["max_tokens"] = value
             elif param in supported_openai_params:
                 if value is not None:
                     optional_params[param] = value
+
         return optional_params
 
     def _add_transform_inline_image_block(
@@ -135,6 +172,14 @@ class FireworksAIConfig(OpenAIGPTConfig):
             ] = f"{content['image_url']['url']}#transform=inline"
         return content
 
+    def _transform_tools(
+        self, tools: List[OpenAIChatCompletionToolParam]
+    ) -> List[OpenAIChatCompletionToolParam]:
+        for tool in tools:
+            if tool.get("type") == "function":
+                tool["function"].pop("strict", None)
+        return tools
+
     def _transform_messages_helper(
         self, messages: List[AllMessageValues], model: str, litellm_params: dict
     ) -> List[AllMessageValues]:
@@ -143,10 +188,8 @@ class FireworksAIConfig(OpenAIGPTConfig):
         """
         disable_add_transform_inline_image_block = cast(
             Optional[bool],
-            litellm_params.get(
-                "disable_add_transform_inline_image_block",
-                litellm.disable_add_transform_inline_image_block,
-            ),
+            litellm_params.get("disable_add_transform_inline_image_block")
+            or litellm.disable_add_transform_inline_image_block,
         )
         for message in messages:
             if message["role"] == "user":
@@ -161,30 +204,14 @@ class FireworksAIConfig(OpenAIGPTConfig):
                             )
         return messages
 
-    def get_model_info(
-        self, model: str, existing_model_info: Optional[ModelInfoBase] = None
-    ) -> ModelInfoBase:
+    def get_provider_info(self, model: str) -> ProviderSpecificModelInfo:
         provider_specific_model_info = ProviderSpecificModelInfo(
             supports_function_calling=True,
             supports_prompt_caching=True,  # https://docs.fireworks.ai/guides/prompt-caching
             supports_pdf_input=True,  # via document inlining
             supports_vision=True,  # via document inlining
         )
-        if existing_model_info is not None:
-            return ModelInfoBase(
-                **{**existing_model_info, **provider_specific_model_info}
-            )
-        return ModelInfoBase(
-            key=model,
-            litellm_provider="fireworks_ai",
-            mode="chat",
-            input_cost_per_token=0.0,
-            output_cost_per_token=0.0,
-            max_tokens=None,
-            max_input_tokens=None,
-            max_output_tokens=None,
-            **provider_specific_model_info,
-        )
+        return provider_specific_model_info
 
     def transform_request(
         self,
@@ -199,6 +226,9 @@ class FireworksAIConfig(OpenAIGPTConfig):
         messages = self._transform_messages_helper(
             messages=messages, model=model, litellm_params=litellm_params
         )
+        if "tools" in optional_params and optional_params["tools"] is not None:
+            tools = self._transform_tools(tools=optional_params["tools"])
+            optional_params["tools"] = tools
         return super().transform_request(
             model=model,
             messages=messages,
@@ -206,6 +236,94 @@ class FireworksAIConfig(OpenAIGPTConfig):
             litellm_params=litellm_params,
             headers=headers,
         )
+
+    def _handle_message_content_with_tool_calls(
+        self,
+        message: Message,
+        tool_calls: Optional[List[ChatCompletionToolParam]],
+    ) -> Message:
+        """
+        Fireworks AI sends tool calls in the content field instead of tool_calls
+
+        Relevant Issue: https://github.com/BerriAI/litellm/issues/7209#issuecomment-2813208780
+        """
+        if (
+            tool_calls is not None
+            and message.content is not None
+            and message.tool_calls is None
+        ):
+            try:
+                function = Function(**json.loads(message.content))
+                if function.name != RESPONSE_FORMAT_TOOL_NAME and function.name in [
+                    tool["function"]["name"] for tool in tool_calls
+                ]:
+                    tool_call = ChatCompletionMessageToolCall(
+                        function=function, id=str(uuid.uuid4()), type="function"
+                    )
+                    message.tool_calls = [tool_call]
+
+                    message.content = None
+            except Exception:
+                pass
+
+        return message
+
+    def transform_response(
+        self,
+        model: str,
+        raw_response: httpx.Response,
+        model_response: ModelResponse,
+        logging_obj: LiteLLMLoggingObj,
+        request_data: dict,
+        messages: List[AllMessageValues],
+        optional_params: dict,
+        litellm_params: dict,
+        encoding: Any,
+        api_key: Optional[str] = None,
+        json_mode: Optional[bool] = None,
+    ) -> ModelResponse:
+        ## LOGGING
+        logging_obj.post_call(
+            input=messages,
+            api_key=api_key,
+            original_response=raw_response.text,
+            additional_args={"complete_input_dict": request_data},
+        )
+
+        ## RESPONSE OBJECT
+        try:
+            completion_response = raw_response.json()
+        except Exception as e:
+            response_headers = getattr(raw_response, "headers", None)
+            raise FireworksAIException(
+                message="Unable to get json response - {}, Original Response: {}".format(
+                    str(e), raw_response.text
+                ),
+                status_code=raw_response.status_code,
+                headers=response_headers,
+            )
+
+        raw_response_headers = dict(raw_response.headers)
+
+        additional_headers = get_response_headers(raw_response_headers)
+
+        response = ModelResponse(**completion_response)
+
+        if response.model is not None:
+            response.model = "fireworks_ai/" + response.model
+
+        ## FIREWORKS AI sends tool calls in the content field instead of tool_calls
+        for choice in response.choices:
+            cast(
+                Choices, choice
+            ).message = self._handle_message_content_with_tool_calls(
+                message=cast(Choices, choice).message,
+                tool_calls=optional_params.get("tools", None),
+            )
+
+        response._hidden_params = {"additional_headers": additional_headers}
+
+        return response
 
     def _get_openai_compatible_provider_info(
         self, api_base: Optional[str], api_key: Optional[str]
@@ -249,4 +367,14 @@ class FireworksAIConfig(OpenAIGPTConfig):
             )
 
         models = response.json()["models"]
+
         return ["fireworks_ai/" + model["name"] for model in models]
+
+    @staticmethod
+    def get_api_key(api_key: Optional[str] = None) -> Optional[str]:
+        return api_key or (
+            get_secret_str("FIREWORKS_API_KEY")
+            or get_secret_str("FIREWORKS_AI_API_KEY")
+            or get_secret_str("FIREWORKSAI_API_KEY")
+            or get_secret_str("FIREWORKS_AI_TOKEN")
+        )

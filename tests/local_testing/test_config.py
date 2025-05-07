@@ -46,7 +46,7 @@ async def test_delete_deployment():
     import base64
 
     litellm_params = LiteLLM_Params(
-        model="azure/chatgpt-v-2",
+        model="azure/chatgpt-v-3",
         api_key=os.getenv("AZURE_API_KEY"),
         api_base=os.getenv("AZURE_API_BASE"),
         api_version=os.getenv("AZURE_API_VERSION"),
@@ -232,7 +232,7 @@ async def test_db_error_new_model_check():
 
 
 litellm_params = LiteLLM_Params(
-    model="azure/chatgpt-v-2",
+    model="azure/chatgpt-v-3",
     api_key=os.getenv("AZURE_API_KEY"),
     api_base=os.getenv("AZURE_API_BASE"),
     api_version=os.getenv("AZURE_API_VERSION"),
@@ -250,7 +250,7 @@ def _create_model_list(flag_value: Literal[0, 1], master_key: str):
     import base64
 
     new_litellm_params = LiteLLM_Params(
-        model="azure/chatgpt-v-2-3",
+        model="azure/chatgpt-v-3-3",
         api_key=os.getenv("AZURE_API_KEY"),
         api_base=os.getenv("AZURE_API_BASE"),
         api_version=os.getenv("AZURE_API_VERSION"),
@@ -367,6 +367,17 @@ def _check_provider_config(config: BaseConfig, provider: LlmProviders):
         ), f"Provider {provider} is an instance of OpenAIGPTConfig"
 
     assert "_abc_impl" not in config.get_config(), f"Provider {provider} has _abc_impl"
+
+
+def test_provider_config_manager_bedrock_converse_like():
+    from litellm.llms.bedrock.chat.converse_transformation import AmazonConverseConfig
+
+    config = ProviderConfigManager.get_provider_chat_config(
+        model="bedrock/converse_like/us.amazon.nova-pro-v1:0",
+        provider=LlmProviders.BEDROCK,
+    )
+    print(f"config: {config}")
+    assert isinstance(config, AmazonConverseConfig)
 
 
 # def test_provider_config_manager():

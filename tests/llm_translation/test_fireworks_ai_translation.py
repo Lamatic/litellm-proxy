@@ -1,6 +1,6 @@
 import os
 import sys
-
+import json
 import pytest
 
 sys.path.insert(
@@ -80,7 +80,7 @@ def test_map_response_format():
 class TestFireworksAIChatCompletion(BaseLLMChatTest):
     def get_base_completion_call_args(self) -> dict:
         return {
-            "model": "fireworks_ai/accounts/fireworks/models/llama-v3p2-11b-vision-instruct"
+            "model": "fireworks_ai/accounts/fireworks/models/llama-v3p1-8b-instruct"
         }
 
     def test_tool_call_no_arguments(self, tool_call_no_arguments):
@@ -196,3 +196,50 @@ def test_global_disable_flag(model, is_disabled, expected_url):
     )
     assert result["image_url"] == expected_url
     litellm.disable_add_transform_inline_image_block = False  # Reset for other tests
+
+
+def test_global_disable_flag_with_transform_messages_helper(monkeypatch):
+    from openai import OpenAI
+    from unittest.mock import patch
+    from litellm import completion
+    from litellm.llms.custom_httpx.http_handler import HTTPHandler
+
+    client = HTTPHandler()
+
+    monkeypatch.setattr(litellm, "disable_add_transform_inline_image_block", True)
+
+    with patch.object(
+        client,
+        "post",
+    ) as mock_post:
+        try:
+            completion(
+                model="fireworks_ai/accounts/fireworks/models/llama-v3p3-70b-instruct",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "What's in this image?"},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+                                },
+                            },
+                        ],
+                    }
+                ],
+                client=client,
+            )
+        except Exception as e:
+            print(e)
+
+        mock_post.assert_called_once()
+        print(mock_post.call_args.kwargs)
+        json_data = json.loads(mock_post.call_args.kwargs["data"])
+        assert (
+            "#transform=inline"
+            not in json_data["messages"][0]["content"][1]["image_url"][
+                "url"
+            ]
+        )
