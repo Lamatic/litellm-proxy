@@ -1,4 +1,4 @@
-name: Test New LiteLLM Version - ${{ inputs.litellm_version }}
+name: Test New LiteLLM Version
 
 on:
   workflow_dispatch:
@@ -9,8 +9,12 @@ on:
 
 jobs:
   test-deploy-cloudrun:
+    name: Deploy ${{ inputs.litellm_version }} to Cloud Run testing instance
     runs-on: ubuntu-latest
     steps:
+      - name: Set version info
+        run: echo "Testing LiteLLM version ${{ inputs.litellm_version }}"
+      
       - uses: actions/checkout@v4
       
       - name: Authenticate with Google Cloud
@@ -46,6 +50,7 @@ jobs:
             --min 1
       
   run-unit-tests:
+    name: Run Unit Tests for ${{ inputs.litellm_version }} on testing cloud run instance
     needs: test-deploy-cloudrun
     runs-on: ubuntu-latest
     steps:
@@ -78,6 +83,9 @@ jobs:
       #     curl -X POST -H "Content-Type: application/json" \
       #       -d '{"litellm_version": "${{ inputs.litellm_version }}", "status": "test-completed", "environment": "testing"}' \
       #       ${{ secrets.WEBHOOK_URL }}
+      # deploy-to-development
+      # test-production
+      # test-development
   
             
   
