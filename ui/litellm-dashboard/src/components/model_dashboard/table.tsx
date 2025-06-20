@@ -92,7 +92,7 @@ export function ModelDataTable<TData, TValue>({
     <div className="rounded-lg custom-border relative">
       <div className="overflow-x-auto">
         <div className="relative min-w-full">
-          <Table className="[&_td]:py-2 [&_th]:py-2 w-full">
+          <Table className="[&_td]:py-0.5 [&_th]:py-1 w-full">
             <TableHead>
               {tableInstance.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id}>
@@ -109,7 +109,7 @@ export function ModelDataTable<TData, TValue>({
                         position: header.id === 'actions' ? 'sticky' : 'relative',
                         right: header.id === 'actions' ? 0 : 'auto',
                       }}
-                      onClick={header.column.getCanSort() ? header.column.getToggleSortingHandler() : undefined}
+                      onClick={header.column.getToggleSortingHandler()}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center">
@@ -120,7 +120,7 @@ export function ModelDataTable<TData, TValue>({
                             )
                           )}
                         </div>
-                        {header.id !== 'actions' && header.column.getCanSort() && (
+                        {header.id !== 'actions' && (
                           <div className="w-4">
                             {header.column.getIsSorted() ? (
                               {

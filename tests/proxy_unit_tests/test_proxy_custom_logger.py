@@ -97,10 +97,10 @@ def test_embedding(client):
             "headers": {
                 "host": "testserver",
                 "accept": "*/*",
-                "accept-encoding": "gzip, deflate, zstd",
+                "accept-encoding": "gzip, deflate",
                 "connection": "keep-alive",
                 "user-agent": "testclient",
-                "content-length": "51",
+                "content-length": "54",
                 "content-type": "application/json",
             },
             "body": {"model": "azure-embedding-model", "input": ["hello"]},
@@ -194,10 +194,10 @@ def test_chat_completion(client):
             "headers": {
                 "host": "testserver",
                 "accept": "*/*",
-                "accept-encoding": "gzip, deflate, zstd",
+                "accept-encoding": "gzip, deflate",
                 "connection": "keep-alive",
                 "user-agent": "testclient",
-                "content-length": "115",
+                "content-length": "123",
                 "content-type": "application/json",
             },
             "body": {

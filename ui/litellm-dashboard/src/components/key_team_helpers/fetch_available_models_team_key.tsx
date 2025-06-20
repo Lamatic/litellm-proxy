@@ -16,8 +16,6 @@ export const fetchAvailableModelsForTeamOrKey = async (
             accessToken,
             userID,
             userRole,
-            true,
-            null,
             true
           );
           

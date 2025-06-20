@@ -17,16 +17,14 @@ def _add_headers_to_response(response: Any, headers: dict) -> Any:
     )
 
     if hidden_params is None:
-        hidden_params_dict = {}
+        hidden_params = {}
     elif isinstance(hidden_params, HiddenParams):
-        hidden_params_dict = hidden_params.model_dump()
-    else:
-        hidden_params_dict = hidden_params
+        hidden_params = hidden_params.model_dump()
 
-    hidden_params_dict.setdefault("additional_headers", {})
-    hidden_params_dict["additional_headers"].update(headers)
+    hidden_params.setdefault("additional_headers", {})
+    hidden_params["additional_headers"].update(headers)
 
-    setattr(response, "_hidden_params", hidden_params_dict)
+    setattr(response, "_hidden_params", hidden_params)
     return response
 
 

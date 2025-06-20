@@ -19,7 +19,6 @@ import {
 import { SwitchVerticalIcon, ChevronUpIcon, ChevronDownIcon } from "@heroicons/react/outline";
 import { UserInfo } from "./types";
 import UserInfoView from "./user_info_view";
-import { columns as createColumns } from "./columns";
 
 interface UserDataTableProps {
   data: UserInfo[];
@@ -33,23 +32,17 @@ interface UserDataTableProps {
   accessToken: string | null;
   userRole: string | null;
   possibleUIRoles: Record<string, Record<string, string>> | null;
-  handleEdit: (user: UserInfo) => void;
-  handleDelete: (userId: string) => void;
-  handleResetPassword: (userId: string) => void;
 }
 
 export function UserDataTable({
   data = [],
-  columns: originalColumns,
+  columns,
   isLoading = false,
   onSortChange,
   currentSort,
   accessToken,
   userRole,
   possibleUIRoles,
-  handleEdit,
-  handleDelete,
-  handleResetPassword,
 }: UserDataTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([
     { 
@@ -58,31 +51,6 @@ export function UserDataTable({
     }
   ]);
   const [selectedUserId, setSelectedUserId] = React.useState<string | null>(null);
-  const [openInEditMode, setOpenInEditMode] = React.useState<boolean>(false);
-
-  const handleUserClick = (userId: string, openInEditMode: boolean = false) => {
-    setSelectedUserId(userId);
-    setOpenInEditMode(openInEditMode);
-  };
-
-  const handleCloseUserInfo = () => {
-    setSelectedUserId(null);
-    setOpenInEditMode(false);
-  };
-
-  // Create columns with the handleUserClick function
-  const columns = React.useMemo(() => {
-    if (possibleUIRoles) {
-      return createColumns(
-        possibleUIRoles,
-        handleEdit,
-        handleDelete,
-        handleResetPassword,
-        handleUserClick
-      );
-    }
-    return originalColumns;
-  }, [possibleUIRoles, handleEdit, handleDelete, handleResetPassword, handleUserClick, originalColumns]);
 
   const table = useReactTable({
     data,
@@ -104,6 +72,14 @@ export function UserDataTable({
     enableSorting: true,
   });
 
+  const handleUserClick = (userId: string) => {
+    setSelectedUserId(userId);
+  };
+
+  const handleCloseUserInfo = () => {
+    setSelectedUserId(null);
+  };
+
   // Update local sorting state when currentSort prop changes
   React.useEffect(() => {
     if (currentSort) {
@@ -122,8 +98,6 @@ export function UserDataTable({
         accessToken={accessToken}
         userRole={userRole}
         possibleUIRoles={possibleUIRoles}
-        initialTab={openInEditMode ? 1 : 0}
-        startInEditMode={openInEditMode}
       />
     );
   }
@@ -194,7 +168,7 @@ export function UserDataTable({
                       }`}
                       onClick={() => {
                         if (cell.column.id === 'user_id') {
-                          handleUserClick(cell.getValue() as string, false);
+                          handleUserClick(cell.getValue() as string);
                         }
                       }}
                       style={{

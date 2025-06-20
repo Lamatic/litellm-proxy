@@ -78,9 +78,8 @@ curl http://localhost:4000/v1/batches \
 **Create File for Batch Completion**
 
 ```python
-import litellm
+from litellm
 import os 
-import asyncio
 
 os.environ["OPENAI_API_KEY"] = "sk-.."
 
@@ -98,9 +97,8 @@ print("Response from creating file=", file_obj)
 **Create Batch Request**
 
 ```python
-import litellm
+from litellm
 import os 
-import asyncio
 
 create_batch_response = await litellm.acreate_batch(
     completion_window="24h",
@@ -116,38 +114,10 @@ print("response from litellm.create_batch=", create_batch_response)
 **Retrieve the Specific Batch and File Content**
 
 ```python
-    # Maximum wait time before we give up
-    MAX_WAIT_TIME = 300  
 
-    # Time to wait between each status check
-    POLL_INTERVAL = 5
-    
-    #Time waited till now 
-    waited = 0
-
-    # Wait for the batch to finish processing before trying to retrieve output
-    # This loop checks the batch status every few seconds (polling)
-
-    while True:
-        retrieved_batch = await litellm.aretrieve_batch(
-            batch_id=create_batch_response.id,
-            custom_llm_provider="openai"
-        )
-        
-        status = retrieved_batch.status
-        print(f"⏳ Batch status: {status}")
-        
-        if status == "completed" and retrieved_batch.output_file_id:
-            print("✅ Batch complete. Output file ID:", retrieved_batch.output_file_id)
-            break
-        elif status in ["failed", "cancelled", "expired"]:
-            raise RuntimeError(f"❌ Batch failed with status: {status}")
-        
-        await asyncio.sleep(POLL_INTERVAL)
-        waited += POLL_INTERVAL
-        if waited > MAX_WAIT_TIME:
-            raise TimeoutError("❌ Timed out waiting for batch to complete.")
-
+retrieved_batch = await litellm.aretrieve_batch(
+    batch_id=create_batch_response.id, custom_llm_provider="openai"
+)
 print("retrieved batch=", retrieved_batch)
 # just assert that we retrieved a non None batch
 

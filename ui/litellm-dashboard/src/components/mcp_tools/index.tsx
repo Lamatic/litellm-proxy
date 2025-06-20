@@ -4,7 +4,6 @@ import { DataTable } from '../view_logs/table';
 import { columns, ToolTestPanel } from './columns';
 import { MCPTool, MCPToolsViewerProps, CallMCPToolResponse } from './types';
 import { listMCPTools, callMCPTool } from '../networking';
-import MCPServers from './mcp_servers';
 
 // Wrapper to handle the type mismatch between MCPTool and DataTable's expected type
 function DataTableWrapper({
@@ -33,12 +32,11 @@ function DataTableWrapper({
   );
 }
 
-const MCPToolsViewer = ({
-  serverId,
+export default function MCPToolsViewer({
   accessToken,
   userRole,
   userID,
-}: MCPToolsViewerProps) => {
+}: MCPToolsViewerProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTool, setSelectedTool] = useState<MCPTool | null>(null);
   const [toolResult, setToolResult] = useState<CallMCPToolResponse | null>(null);
@@ -49,7 +47,7 @@ const MCPToolsViewer = ({
     queryKey: ['mcpTools'],
     queryFn: () => {
       if (!accessToken) throw new Error('Access Token required');
-      return listMCPTools(accessToken, serverId);
+      return listMCPTools(accessToken);
     },
     enabled: !!accessToken,
   });
@@ -94,7 +92,7 @@ const MCPToolsViewer = ({
       const searchLower = searchTerm.toLowerCase();
       return (
         tool.name.toLowerCase().includes(searchLower) ||
-        (tool.description != null && tool.description.toLowerCase().includes(searchLower)) ||
+        tool.description.toLowerCase().includes(searchLower) ||
         tool.mcp_info.server_name.toLowerCase().includes(searchLower)
       );
     });
@@ -173,6 +171,4 @@ const MCPToolsViewer = ({
       )}
     </div>
   );
-}
-
-export { MCPToolsViewer, MCPServers };
+} 

@@ -36,23 +36,16 @@ export function DataTable<TData, TValue>({
   loadingMessage = "🚅 Loading logs...",
   noDataMessage = "No logs found",
 }: DataTableProps<TData, TValue>) {
-  const table = useReactTable<TData>({
+  const table = useReactTable({
     data,
     columns,
     getRowCanExpand,
-    getRowId: (row: TData, index: number) => {
-      const _row: any = row as any;
-      return (
-        _row?.request_id ??
-        String(index)
-      );
-    },
     getCoreRowModel: getCoreRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
   });
 
   return (
-    <div className="rounded-lg custom-border">
+    <div className="rounded-lg custom-border table-wrapper">
       <Table className="[&_td]:py-0.5 [&_th]:py-1">
         <TableHead>
           {table.getHeaderGroups().map((headerGroup) => (

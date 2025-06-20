@@ -1,7 +1,3 @@
-"""
-Legacy /v1/embedding handler for Bedrock Cohere. 
-"""
-
 import json
 from typing import Any, Callable, Optional, Union
 
@@ -17,7 +13,7 @@ from litellm.llms.custom_httpx.http_handler import (
 from litellm.types.llms.bedrock import CohereEmbeddingRequest
 from litellm.types.utils import EmbeddingResponse
 
-from .v1_transformation import CohereEmbeddingConfig
+from .transformation import CohereEmbeddingConfig
 
 
 def validate_environment(api_key, headers: dict):

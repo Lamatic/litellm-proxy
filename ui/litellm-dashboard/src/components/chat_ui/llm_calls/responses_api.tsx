@@ -2,7 +2,6 @@ import openai from "openai";
 import { message } from "antd";
 import { MessageType } from "../types";
 import { TokenUsage } from "../ResponseMetrics";
-import { getProxyBaseUrl } from "@/components/networking";
 
 export async function makeOpenAIResponsesRequest(
   messages: MessageType[],
@@ -15,8 +14,7 @@ export async function makeOpenAIResponsesRequest(
   onTimingData?: (timeToFirstToken: number) => void,
   onUsageData?: (usage: TokenUsage) => void,
   traceId?: string,
-  vector_store_ids?: string[],
-  guardrails?: string[]
+  vector_store_ids?: string[]
 ) {
   if (!accessToken) {
     throw new Error("API key is required");
@@ -28,7 +26,10 @@ export async function makeOpenAIResponsesRequest(
     console.log = function () {};
   }
   
-  const proxyBaseUrl = getProxyBaseUrl()
+  const proxyBaseUrl = isLocal
+    ? "http://localhost:4000"
+    : window.location.origin;
+  
   // Prepare headers with tags and trace ID
   const headers: Record<string, string> = {};
   if (tags && tags.length > 0) {
@@ -61,7 +62,6 @@ export async function makeOpenAIResponsesRequest(
       stream: true,
       litellm_trace_id: traceId,
       ...(vector_store_ids ? { vector_store_ids } : {}),
-      ...(guardrails ? { guardrails } : {}),
     }, { signal });
 
     for await (const event of response) {

@@ -1024,25 +1024,20 @@ def test_async_http_handler(mock_async_client):
     event_hooks = {"request": [lambda r: r]}
     concurrent_limit = 2
 
-    # Mock the transport creation to return a specific transport
-    with mock.patch.object(AsyncHTTPHandler, '_create_async_transport') as mock_create_transport:
-        mock_transport = mock.MagicMock()
-        mock_create_transport.return_value = mock_transport
-        
-        AsyncHTTPHandler(timeout, event_hooks, concurrent_limit)
+    AsyncHTTPHandler(timeout, event_hooks, concurrent_limit)
 
-        mock_async_client.assert_called_with(
-            cert="/client.pem",
-            transport=mock_transport,
-            event_hooks=event_hooks,
-            headers=headers,
-            limits=httpx.Limits(
-                max_connections=concurrent_limit,
-                max_keepalive_connections=concurrent_limit,
-            ),
-            timeout=timeout,
-            verify="/certificate.pem",
-        )
+    mock_async_client.assert_called_with(
+        cert="/client.pem",
+        transport=None,
+        event_hooks=event_hooks,
+        headers=headers,
+        limits=httpx.Limits(
+            max_connections=concurrent_limit,
+            max_keepalive_connections=concurrent_limit,
+        ),
+        timeout=timeout,
+        verify="/certificate.pem",
+    )
 
 
 @mock.patch("httpx.AsyncClient")
@@ -1058,7 +1053,6 @@ def test_async_http_handler_force_ipv4(mock_async_client):
 
     # Set force_ipv4 to True
     litellm.force_ipv4 = True
-    litellm.disable_aiohttp_transport = True
 
     try:
         timeout = 120
@@ -1259,20 +1253,20 @@ def test_get_end_user_id_for_cost_tracking(
 
 
 @pytest.mark.parametrize(
-    "litellm_params, enable_end_user_cost_tracking_prometheus_only, expected_end_user_id",
+    "litellm_params, disable_end_user_cost_tracking_prometheus_only, expected_end_user_id",
     [
-        ({}, True, None),
-        ({"user_api_key_end_user_id": "123"}, True, "123"),
-        ({"user_api_key_end_user_id": "123"}, False, None),
+        ({}, False, None),
+        ({"user_api_key_end_user_id": "123"}, False, "123"),
+        ({"user_api_key_end_user_id": "123"}, True, None),
     ],
 )
 def test_get_end_user_id_for_cost_tracking_prometheus_only(
-    litellm_params, enable_end_user_cost_tracking_prometheus_only, expected_end_user_id
+    litellm_params, disable_end_user_cost_tracking_prometheus_only, expected_end_user_id
 ):
     from litellm.utils import get_end_user_id_for_cost_tracking
 
-    litellm.enable_end_user_cost_tracking_prometheus_only = (
-        enable_end_user_cost_tracking_prometheus_only
+    litellm.disable_end_user_cost_tracking_prometheus_only = (
+        disable_end_user_cost_tracking_prometheus_only
     )
     assert (
         get_end_user_id_for_cost_tracking(

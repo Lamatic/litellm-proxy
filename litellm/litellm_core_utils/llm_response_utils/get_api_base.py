@@ -37,7 +37,8 @@ def get_api_base(
             _optional_params = LiteLLM_Params(
                 model=model, **optional_params
             )  # convert to pydantic object
-    except Exception:
+    except Exception as e:
+        verbose_logger.debug("Error occurred in getting api base - {}".format(str(e)))
         return None
     # get llm provider
 
@@ -72,11 +73,13 @@ def get_api_base(
         _optional_params.vertex_location is not None
         and _optional_params.vertex_project is not None
     ):
-        from litellm.llms.vertex_ai.vertex_llm_base import VertexBase
-        from litellm.types.llms.vertex_ai import VertexPartnerProvider
+        from litellm.llms.vertex_ai.vertex_ai_partner_models.main import (
+            VertexPartnerProvider,
+            create_vertex_url,
+        )
 
         if "claude" in model:
-            _api_base = VertexBase.create_vertex_url(
+            _api_base = create_vertex_url(
                 vertex_location=_optional_params.vertex_location,
                 vertex_project=_optional_params.vertex_project,
                 model=model,

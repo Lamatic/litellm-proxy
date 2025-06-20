@@ -8,17 +8,13 @@ interface VectorStoreSelectorProps {
   value?: string[];
   className?: string;
   accessToken: string;
-  placeholder?: string;
-  disabled?: boolean;
 }
 
 const VectorStoreSelector: React.FC<VectorStoreSelectorProps> = ({ 
   onChange, 
   value, 
   className, 
-  accessToken,
-  placeholder = "Select vector stores",
-  disabled = false
+  accessToken 
 }) => {
   const [vectorStores, setVectorStores] = useState<VectorStore[]>([]);
   const [loading, setLoading] = useState(false);
@@ -47,7 +43,7 @@ const VectorStoreSelector: React.FC<VectorStoreSelectorProps> = ({
     <div>
       <Select
         mode="multiple"
-        placeholder={placeholder}
+        placeholder="Select vector stores"
         onChange={onChange}
         value={value}
         loading={loading}
@@ -60,7 +56,6 @@ const VectorStoreSelector: React.FC<VectorStoreSelectorProps> = ({
         optionFilterProp="label"
         showSearch
         style={{ width: '100%' }}
-        disabled={disabled}
       />
     </div>
   );

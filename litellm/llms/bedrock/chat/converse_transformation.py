@@ -12,9 +12,6 @@ import httpx
 import litellm
 from litellm.litellm_core_utils.core_helpers import map_finish_reason
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.litellm_core_utils.llm_response_utils.convert_dict_to_response import (
-    _parse_content_for_reasoning,
-)
 from litellm.litellm_core_utils.prompt_templates.factory import (
     BedrockConverseMessagesProcessor,
     _bedrock_converse_messages_pt,
@@ -45,7 +42,7 @@ from litellm.types.utils import (
     PromptTokensDetailsWrapper,
     Usage,
 )
-from litellm.utils import add_dummy_tool, has_tool_call_blocks, supports_reasoning
+from litellm.utils import add_dummy_tool, has_tool_call_blocks
 
 from ..common_utils import BedrockError, BedrockModelInfo, get_bedrock_tool_name
 
@@ -105,8 +102,6 @@ class AmazonConverseConfig(BaseConfig):
         }
 
     def get_supported_openai_params(self, model: str) -> List[str]:
-        from litellm.utils import supports_function_calling
-
         supported_params = [
             "max_tokens",
             "max_completion_tokens",
@@ -139,9 +134,6 @@ class AmazonConverseConfig(BaseConfig):
             or base_model.startswith("meta.llama3-2")
             or base_model.startswith("meta.llama3-3")
             or base_model.startswith("amazon.nova")
-            or supports_function_calling(
-                model=model, custom_llm_provider=self.custom_llm_provider
-            )
         ):
             supported_params.append("tools")
 
@@ -153,13 +145,7 @@ class AmazonConverseConfig(BaseConfig):
 
         if (
             "claude-3-7" in model
-            or "claude-sonnet-4" in model
-            or "claude-opus-4" in model
-            or supports_reasoning(
-                model=model,
-                custom_llm_provider=self.custom_llm_provider,
-            )
-        ):
+        ):  # [TODO]: move to a 'supports_reasoning_content' param from model cost map
             supported_params.append("thinking")
             supported_params.append("reasoning_effort")
         return supported_params
@@ -201,15 +187,8 @@ class AmazonConverseConfig(BaseConfig):
     def get_supported_document_types(self) -> List[str]:
         return ["pdf", "csv", "doc", "docx", "xls", "xlsx", "html", "txt", "md"]
 
-    def get_supported_video_types(self) -> List[str]:
-        return ["mp4", "mov", "mkv", "webm", "flv", "mpeg", "mpg", "wmv", "3gp"]
-
     def get_all_supported_content_types(self) -> List[str]:
-        return (
-            self.get_supported_image_types()
-            + self.get_supported_document_types()
-            + self.get_supported_video_types()
-        )
+        return self.get_supported_image_types() + self.get_supported_document_types()
 
     def _create_json_tool_call_for_response_format(
         self,
@@ -365,29 +344,6 @@ class AmazonConverseConfig(BaseConfig):
         )
 
         return optional_params
-
-    def update_optional_params_with_thinking_tokens(
-        self, non_default_params: dict, optional_params: dict
-    ):
-        """
-        Handles scenario where max tokens is not specified. For anthropic models (anthropic api/bedrock/vertex ai), this requires having the max tokens being set and being greater than the thinking token budget.
-
-        Checks 'non_default_params' for 'thinking' and 'max_tokens'
-
-        if 'thinking' is enabled and 'max_tokens' is not specified, set 'max_tokens' to the thinking token budget + DEFAULT_MAX_TOKENS
-        """
-        from litellm.constants import DEFAULT_MAX_TOKENS
-
-        is_thinking_enabled = self.is_thinking_enabled(optional_params)
-        is_max_tokens_in_request = self.is_max_tokens_in_request(non_default_params)
-        if is_thinking_enabled and not is_max_tokens_in_request:
-            thinking_token_budget = cast(dict, optional_params["thinking"]).get(
-                "budget_tokens", None
-            )
-            if thinking_token_budget is not None:
-                optional_params["maxTokens"] = (
-                    thinking_token_budget + DEFAULT_MAX_TOKENS
-                )
 
     @overload
     def _get_cache_point_block(
@@ -800,73 +756,6 @@ class AmazonConverseConfig(BaseConfig):
 
         return message, returned_finish_reason
 
-    def _translate_message_content(
-        self, content_blocks: List[ContentBlock]
-    ) -> Tuple[
-        str,
-        List[ChatCompletionToolCallChunk],
-        Optional[List[BedrockConverseReasoningContentBlock]],
-    ]:
-        """
-        Translate the message content to a string and a list of tool calls and reasoning content blocks
-
-        Returns:
-            content_str: str
-            tools: List[ChatCompletionToolCallChunk]
-            reasoningContentBlocks: Optional[List[BedrockConverseReasoningContentBlock]]
-        """
-        content_str = ""
-        tools: List[ChatCompletionToolCallChunk] = []
-        reasoningContentBlocks: Optional[
-            List[BedrockConverseReasoningContentBlock]
-        ] = None
-        for idx, content in enumerate(content_blocks):
-            """
-            - Content is either a tool response or text
-            """
-            extracted_reasoning_content_str: Optional[str] = None
-            if "text" in content:
-                (
-                    extracted_reasoning_content_str,
-                    _content_str,
-                ) = _parse_content_for_reasoning(content["text"])
-                if _content_str is not None:
-                    content_str += _content_str
-            if "toolUse" in content:
-                ## check tool name was formatted by litellm
-                _response_tool_name = content["toolUse"]["name"]
-                response_tool_name = get_bedrock_tool_name(
-                    response_tool_name=_response_tool_name
-                )
-                _function_chunk = ChatCompletionToolCallFunctionChunk(
-                    name=response_tool_name,
-                    arguments=json.dumps(content["toolUse"]["input"]),
-                )
-
-                _tool_response_chunk = ChatCompletionToolCallChunk(
-                    id=content["toolUse"]["toolUseId"],
-                    type="function",
-                    function=_function_chunk,
-                    index=idx,
-                )
-                tools.append(_tool_response_chunk)
-            if extracted_reasoning_content_str is not None:
-                if reasoningContentBlocks is None:
-                    reasoningContentBlocks = []
-                reasoningContentBlocks.append(
-                    BedrockConverseReasoningContentBlock(
-                        reasoningText=BedrockConverseReasoningTextBlock(
-                            text=extracted_reasoning_content_str,
-                        )
-                    )
-                )
-            if "reasoningContent" in content:
-                if reasoningContentBlocks is None:
-                    reasoningContentBlocks = []
-                reasoningContentBlocks.append(content["reasoningContent"])
-
-        return content_str, tools, reasoningContentBlocks
-
     def _transform_response(
         self,
         model: str,
@@ -945,11 +834,34 @@ class AmazonConverseConfig(BaseConfig):
         ] = None
 
         if message is not None:
-            (
-                content_str,
-                tools,
-                reasoningContentBlocks,
-            ) = self._translate_message_content(message["content"])
+            for idx, content in enumerate(message["content"]):
+                """
+                - Content is either a tool response or text
+                """
+                if "text" in content:
+                    content_str += content["text"]
+                if "toolUse" in content:
+                    ## check tool name was formatted by litellm
+                    _response_tool_name = content["toolUse"]["name"]
+                    response_tool_name = get_bedrock_tool_name(
+                        response_tool_name=_response_tool_name
+                    )
+                    _function_chunk = ChatCompletionToolCallFunctionChunk(
+                        name=response_tool_name,
+                        arguments=json.dumps(content["toolUse"]["input"]),
+                    )
+
+                    _tool_response_chunk = ChatCompletionToolCallChunk(
+                        id=content["toolUse"]["toolUseId"],
+                        type="function",
+                        function=_function_chunk,
+                        index=idx,
+                    )
+                    tools.append(_tool_response_chunk)
+                if "reasoningContent" in content:
+                    if reasoningContentBlocks is None:
+                        reasoningContentBlocks = []
+                    reasoningContentBlocks.append(content["reasoningContent"])
 
         if reasoningContentBlocks is not None:
             chat_completion_message["provider_specific_fields"] = {

@@ -7,10 +7,10 @@ import httpx
 import litellm
 from litellm._logging import verbose_proxy_logger
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
-from litellm.llms.anthropic import get_anthropic_config
 from litellm.llms.anthropic.chat.handler import (
     ModelResponseIterator as AnthropicModelResponseIterator,
 )
+from litellm.llms.anthropic.chat.transformation import AnthropicConfig
 from litellm.proxy._types import PassThroughEndpointLoggingTypedDict
 from litellm.proxy.auth.auth_utils import get_end_user_id_from_request_body
 from litellm.types.passthrough_endpoints.pass_through_endpoints import (
@@ -43,8 +43,7 @@ class AnthropicPassthroughLoggingHandler:
         Transforms Anthropic response to OpenAI response, generates a standard logging object so downstream logging can be handled
         """
         model = response_body.get("model", "")
-        anthropic_config = get_anthropic_config(url_route)
-        litellm_model_response: ModelResponse = anthropic_config().transform_response(
+        litellm_model_response: ModelResponse = AnthropicConfig().transform_response(
             raw_response=httpx_response,
             model_response=litellm.ModelResponse(),
             model=model,
@@ -210,6 +209,10 @@ class AnthropicPassthroughLoggingHandler:
                 if transformed_openai_chunk is not None:
                     all_openai_chunks.append(transformed_openai_chunk)
 
+                verbose_proxy_logger.debug(
+                    "all openai chunks= %s",
+                    json.dumps(all_openai_chunks, indent=4, default=str),
+                )
             except (StopIteration, StopAsyncIteration):
                 break
         complete_streaming_response = litellm.stream_chunk_builder(

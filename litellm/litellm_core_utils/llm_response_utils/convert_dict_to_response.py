@@ -255,9 +255,7 @@ def _parse_content_for_reasoning(
     if not message_text:
         return None, message_text
 
-    reasoning_match = re.match(
-        r"<(?:think|thinking)>(.*?)</(?:think|thinking)>(.*)", message_text, re.DOTALL
-    )
+    reasoning_match = re.match(r"<think>(.*?)</think>(.*)", message_text, re.DOTALL)
 
     if reasoning_match:
         return reasoning_match.group(1), reasoning_match.group(2)
@@ -293,22 +291,6 @@ class LiteLLMResponseObjectHandler:
         hidden_params: Optional[dict] = None,
     ) -> ImageResponse:
         response_object.update({"hidden_params": hidden_params})
-
-        # Handle gpt-image-1 usage field with None values
-        if "usage" in response_object and response_object["usage"] is not None:
-            usage = response_object["usage"]
-            # Check if usage fields are None and provide defaults
-            if usage.get("input_tokens") is None:
-                usage["input_tokens"] = 0
-            if usage.get("output_tokens") is None:
-                usage["output_tokens"] = 0
-            if usage.get("total_tokens") is None:
-                usage["total_tokens"] = usage["input_tokens"] + usage["output_tokens"]
-            if usage.get("input_tokens_details") is None:
-                usage["input_tokens_details"] = {
-                    "image_tokens": 0,
-                    "text_tokens": 0,
-                }
 
         if model_response_object is None:
             model_response_object = ImageResponse(**response_object)
@@ -548,19 +530,6 @@ def convert_to_model_response_object(  # noqa: PLR0915
                 if finish_reason is None:
                     # gpt-4 vision can return 'finish_reason' or 'finish_details'
                     finish_reason = choice.get("finish_details") or "stop"
-                if (
-                    finish_reason == "stop"
-                    and message.tool_calls
-                    and len(message.tool_calls) > 0
-                ):
-                    finish_reason = "tool_calls"
-
-                ## PROVIDER SPECIFIC FIELDS ##
-                provider_specific_fields = {}
-                for field in choice.keys():
-                    if field not in Choices.model_fields.keys():
-                        provider_specific_fields[field] = choice[field]
-
                 logprobs = choice.get("logprobs", None)
                 enhancements = choice.get("enhancements", None)
                 choice = Choices(
@@ -569,7 +538,6 @@ def convert_to_model_response_object(  # noqa: PLR0915
                     message=message,
                     logprobs=logprobs,
                     enhancements=enhancements,
-                    provider_specific_fields=provider_specific_fields,
                 )
                 choice_list.append(choice)
             model_response_object.choices = choice_list

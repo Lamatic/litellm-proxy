@@ -11,7 +11,6 @@ from typing import (
     Iterator,
     List,
     Optional,
-    Tuple,
     Type,
     Union,
     cast,
@@ -29,10 +28,8 @@ from litellm.types.llms.openai import (
     ChatCompletionToolParam,
     ChatCompletionToolParamFunctionChunk,
 )
-
-if TYPE_CHECKING:
-    from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
-    from litellm.types.utils import ModelResponse
+from litellm.types.utils import ModelResponse
+from litellm.utils import CustomStreamWrapper
 
 from ..base_utils import (
     map_developer_role_to_system_role,
@@ -89,7 +86,6 @@ class BaseConfig(ABC):
             for k, v in cls.__dict__.items()
             if not k.startswith("__")
             and not k.startswith("_abc")
-            and not k.startswith("_is_base_class")
             and not isinstance(
                 v,
                 (
@@ -97,7 +93,6 @@ class BaseConfig(ABC):
                     types.BuiltinFunctionType,
                     classmethod,
                     staticmethod,
-                    property,
                 ),
             )
             and v is not None
@@ -112,15 +107,6 @@ class BaseConfig(ABC):
         return (
             non_default_params.get("thinking", {}).get("type") == "enabled"
             or non_default_params.get("reasoning_effort") is not None
-        )
-
-    def is_max_tokens_in_request(self, non_default_params: dict) -> bool:
-        """
-        OpenAI spec allows max_tokens or max_completion_tokens to be specified.
-        """
-        return (
-            "max_tokens" in non_default_params
-            or "max_completion_tokens" in non_default_params
         )
 
     def update_optional_params_with_thinking_tokens(
@@ -291,7 +277,7 @@ class BaseConfig(ABC):
         model: Optional[str] = None,
         stream: Optional[bool] = None,
         fake_stream: Optional[bool] = None,
-    ) -> Tuple[dict, Optional[bytes]]:
+    ) -> dict:
         """
         Some providers like Bedrock require signing the request. The sign request funtion needs access to `request_data` and `complete_url`
         Args:
@@ -304,7 +290,7 @@ class BaseConfig(ABC):
 
         Update the headers with the signed headers in this function. The return values will be sent as headers in the http request.
         """
-        return headers, None
+        return headers
 
     def get_complete_url(
         self,
@@ -337,33 +323,12 @@ class BaseConfig(ABC):
     ) -> dict:
         pass
 
-    async def async_transform_request(
-        self,
-        model: str,
-        messages: List[AllMessageValues],
-        optional_params: dict,
-        litellm_params: dict,
-        headers: dict,
-    ) -> dict:
-        """
-        Override to allow for http requests on async calls - e.g. converting url to base64
-
-        Currently only used by openai.py
-        """
-        return self.transform_request(
-            model=model,
-            messages=messages,
-            optional_params=optional_params,
-            litellm_params=litellm_params,
-            headers=headers,
-        )
-
     @abstractmethod
     def transform_response(
         self,
         model: str,
         raw_response: httpx.Response,
-        model_response: "ModelResponse",
+        model_response: ModelResponse,
         logging_obj: LiteLLMLoggingObj,
         request_data: dict,
         messages: List[AllMessageValues],
@@ -372,7 +337,7 @@ class BaseConfig(ABC):
         encoding: Any,
         api_key: Optional[str] = None,
         json_mode: Optional[bool] = None,
-    ) -> "ModelResponse":
+    ) -> ModelResponse:
         pass
 
     @abstractmethod
@@ -383,13 +348,13 @@ class BaseConfig(ABC):
 
     def get_model_response_iterator(
         self,
-        streaming_response: Union[Iterator[str], AsyncIterator[str], "ModelResponse"],
+        streaming_response: Union[Iterator[str], AsyncIterator[str], ModelResponse],
         sync_stream: bool,
         json_mode: Optional[bool] = False,
     ) -> Any:
         pass
 
-    async def get_async_custom_stream_wrapper(
+    def get_async_custom_stream_wrapper(
         self,
         model: str,
         custom_llm_provider: str,
@@ -400,8 +365,7 @@ class BaseConfig(ABC):
         messages: list,
         client: Optional[AsyncHTTPHandler] = None,
         json_mode: Optional[bool] = None,
-        signed_json_body: Optional[bytes] = None,
-    ) -> "CustomStreamWrapper":
+    ) -> CustomStreamWrapper:
         raise NotImplementedError
 
     def get_sync_custom_stream_wrapper(
@@ -415,8 +379,7 @@ class BaseConfig(ABC):
         messages: list,
         client: Optional[Union[HTTPHandler, AsyncHTTPHandler]] = None,
         json_mode: Optional[bool] = None,
-        signed_json_body: Optional[bytes] = None,
-    ) -> "CustomStreamWrapper":
+    ) -> CustomStreamWrapper:
         raise NotImplementedError
 
     @property

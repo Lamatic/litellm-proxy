@@ -10,13 +10,10 @@ This is an __init__.py file to allow the following interface
 
 """
 
-from typing import Any, AsyncIterator, Coroutine, Dict, List, Optional, Union
+from typing import AsyncIterator, Dict, Iterator, List, Optional, Union
 
 from litellm.llms.anthropic.experimental_pass_through.messages.handler import (
     anthropic_messages as _async_anthropic_messages,
-)
-from litellm.llms.anthropic.experimental_pass_through.messages.handler import (
-    anthropic_messages_handler as _sync_anthropic_messages,
 )
 from litellm.types.llms.anthropic_messages.anthropic_response import (
     AnthropicMessagesResponse,
@@ -31,7 +28,7 @@ async def acreate(
     stop_sequences: Optional[List[str]] = None,
     stream: Optional[bool] = False,
     system: Optional[str] = None,
-    temperature: Optional[float] = None,
+    temperature: Optional[float] = 1.0,
     thinking: Optional[Dict] = None,
     tool_choice: Optional[Dict] = None,
     tools: Optional[List[Dict]] = None,
@@ -79,7 +76,7 @@ async def acreate(
     )
 
 
-def create(
+async def create(
     max_tokens: int,
     messages: List[Dict],
     model: str,
@@ -87,18 +84,14 @@ def create(
     stop_sequences: Optional[List[str]] = None,
     stream: Optional[bool] = False,
     system: Optional[str] = None,
-    temperature: Optional[float] = None,
+    temperature: Optional[float] = 1.0,
     thinking: Optional[Dict] = None,
     tool_choice: Optional[Dict] = None,
     tools: Optional[List[Dict]] = None,
     top_k: Optional[int] = None,
     top_p: Optional[float] = None,
     **kwargs
-) -> Union[
-    AnthropicMessagesResponse,
-    AsyncIterator[Any],
-    Coroutine[Any, Any, Union[AnthropicMessagesResponse, AsyncIterator[Any]]],
-]:
+) -> Union[AnthropicMessagesResponse, Iterator]:
     """
     Async wrapper for Anthropic's messages API
 
@@ -121,19 +114,4 @@ def create(
     Returns:
         Dict: Response from the API
     """
-    return _sync_anthropic_messages(
-        max_tokens=max_tokens,
-        messages=messages,
-        model=model,
-        metadata=metadata,
-        stop_sequences=stop_sequences,
-        stream=stream,
-        system=system,
-        temperature=temperature,
-        thinking=thinking,
-        tool_choice=tool_choice,
-        tools=tools,
-        top_k=top_k,
-        top_p=top_p,
-        **kwargs,
-    )
+    raise NotImplementedError("This function is not implemented")

@@ -13,7 +13,6 @@ interface TopKeyViewProps {
   userID: string | null;
   userRole: string | null;
   teams: any[] | null;
-  premiumUser: boolean;
 }
 
 const TopKeyView: React.FC<TopKeyViewProps> = ({ 
@@ -21,8 +20,7 @@ const TopKeyView: React.FC<TopKeyViewProps> = ({
   accessToken, 
   userID, 
   userRole,
-  teams,
-  premiumUser
+  teams
 }) => {
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -195,7 +193,6 @@ const TopKeyView: React.FC<TopKeyViewProps> = ({
                 userID={userID}
                 userRole={userRole}
                 teams={teams}
-                premiumUser={premiumUser}
               />
             </div>
           </div>

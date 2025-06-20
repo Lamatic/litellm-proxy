@@ -33,11 +33,11 @@ cd litellm/ui/litellm-dashboard
 
 npm run dev
 
-# starts on http://0.0.0.0:3000
+# starts on http://0.0.0.0:3000/ui
 ```
 
 ## 3. Go to local UI 
 
-```bash
-http://0.0.0.0:3000
+```
+http://0.0.0.0:3000/ui
 ```

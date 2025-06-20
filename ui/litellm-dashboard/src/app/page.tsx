@@ -26,13 +26,13 @@ import ChatUI from "@/components/chat_ui";
 import Sidebar from "@/components/leftnav";
 import Usage from "@/components/usage";
 import CacheDashboard from "@/components/cache_dashboard";
-import { getUiConfig, proxyBaseUrl, setGlobalLitellmHeaderName } from "@/components/networking";
+import { proxyBaseUrl, setGlobalLitellmHeaderName } from "@/components/networking";
 import { Organization } from "@/components/networking";
 import GuardrailsPanel from "@/components/guardrails";
 import TransformRequestPanel from "@/components/transform_request";
 import { fetchUserModels } from "@/components/create_key_button";
 import { fetchTeams } from "@/components/common_components/fetch_teams";
-import { MCPToolsViewer, MCPServers } from "@/components/mcp_tools";
+import MCPToolsViewer from "@/components/mcp_tools";
 import TagManagement from "@/components/tag_management";
 import VectorStoreManagement from "@/components/vector_store_management";
 import { UiLoadingSpinner } from "@/components/ui/ui-loading-spinner";
@@ -149,11 +149,8 @@ export default function CreateKeyPage() {
 
   useEffect(() => {
     const token = getCookie("token");
-    getUiConfig().then((data) => { // get the information for constructing the proxy base url, and then set the token and auth loading
-      console.log("ui config in page.tsx:", data);
-      setToken(token);
-      setAuthLoading(false);
-    });
+    setToken(token);
+    setAuthLoading(false);
   }, []);
 
   useEffect(() => {
@@ -167,7 +164,6 @@ export default function CreateKeyPage() {
       return;
     }
 
- 
     const decoded = jwtDecode(token) as { [key: string]: any };
     if (decoded) {
       // cast decoded to dictionary
@@ -218,12 +214,8 @@ export default function CreateKeyPage() {
       if (decoded.user_id) {
         setUserID(decoded.user_id);
       }
-
     }
-
-    
   }, [token]);
-
   
   useEffect(() => {
     if (accessToken && userID && userRole) {
@@ -274,7 +266,6 @@ export default function CreateKeyPage() {
             <div className="flex flex-1 overflow-auto">
               <div className="mt-8">
                 <Sidebar
-                  accessToken={accessToken}
                   setPage={updatePage}
                   userRole={userRole}
                   defaultSelectedKey={page}
@@ -336,7 +327,6 @@ export default function CreateKeyPage() {
                   userID={userID}
                   userRole={userRole}
                   organizations={organizations}
-                  premiumUser={premiumUser}
                 />
               ) : page == "organizations" ? (
                 <Organizations
@@ -352,7 +342,6 @@ export default function CreateKeyPage() {
                   setTeams={setTeams}
                   searchParams={searchParams}
                   accessToken={accessToken}
-                  userID={userID}
                   showSSOBanner={showSSOBanner}
                   premiumUser={premiumUser}
                   proxySettings={proxySettings}
@@ -369,10 +358,10 @@ export default function CreateKeyPage() {
               ) : page == "budgets" ? (
                 <BudgetPanel accessToken={accessToken} />
               ) : page == "guardrails" ? (
-                <GuardrailsPanel accessToken={accessToken} userRole={userRole} />
+                <GuardrailsPanel accessToken={accessToken} />
               ): page == "transform-request" ? (
                 <TransformRequestPanel accessToken={accessToken} />
-              ) : page == "general-settings" ? (
+              ): page == "general-settings" ? (
                 <GeneralSettings
                   userID={userID}
                   userRole={userRole}
@@ -407,10 +396,9 @@ export default function CreateKeyPage() {
                   token={token}
                   accessToken={accessToken}
                   allTeams={teams as Team[] ?? []}
-                  premiumUser={premiumUser}
                 />
-              ) : page == "mcp-servers" ? (
-                <MCPServers
+              ) : page == "mcp-tools" ? (
+                <MCPToolsViewer
                   accessToken={accessToken}
                   userRole={userRole}
                   userID={userID}
@@ -432,10 +420,10 @@ export default function CreateKeyPage() {
                   userID={userID}
                   userRole={userRole}
                   accessToken={accessToken}
-                  teams={(teams as Team[]) ?? []}
-                  premiumUser={premiumUser}
+                  teams={teams as Team[] ?? []}
                 />
-              ) : (
+              ) : 
+              (
                 <Usage
                   userID={userID}
                   userRole={userRole}

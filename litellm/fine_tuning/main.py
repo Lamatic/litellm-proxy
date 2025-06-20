@@ -22,9 +22,12 @@ from litellm.llms.azure.fine_tuning.handler import AzureOpenAIFineTuningAPI
 from litellm.llms.openai.fine_tuning.handler import OpenAIFineTuningAPI
 from litellm.llms.vertex_ai.fine_tuning.handler import VertexFineTuningAPI
 from litellm.secret_managers.main import get_secret_str
-from litellm.types.llms.openai import FineTuningJobCreate, Hyperparameters
+from litellm.types.llms.openai import (
+    FineTuningJob,
+    FineTuningJobCreate,
+    Hyperparameters,
+)
 from litellm.types.router import *
-from litellm.types.utils import LiteLLMFineTuningJob
 from litellm.utils import client, supports_httpx_timeout
 
 ####### ENVIRONMENT VARIABLES ###################
@@ -47,7 +50,7 @@ async def acreate_fine_tuning_job(
     extra_headers: Optional[Dict[str, str]] = None,
     extra_body: Optional[Dict[str, str]] = None,
     **kwargs,
-) -> LiteLLMFineTuningJob:
+) -> FineTuningJob:
     """
     Async: Creates and executes a batch from an uploaded file of request
 
@@ -101,7 +104,7 @@ def create_fine_tuning_job(
     extra_headers: Optional[Dict[str, str]] = None,
     extra_body: Optional[Dict[str, str]] = None,
     **kwargs,
-) -> Union[LiteLLMFineTuningJob, Coroutine[Any, Any, LiteLLMFineTuningJob]]:
+) -> Union[FineTuningJob, Coroutine[Any, Any, FineTuningJob]]:
     """
     Creates a fine-tuning job which begins the process of creating a new model from a given dataset.
 
@@ -285,14 +288,13 @@ def create_fine_tuning_job(
         raise e
 
 
-@client
 async def acancel_fine_tuning_job(
     fine_tuning_job_id: str,
     custom_llm_provider: Literal["openai", "azure", "vertex_ai"] = "openai",
     extra_headers: Optional[Dict[str, str]] = None,
     extra_body: Optional[Dict[str, str]] = None,
     **kwargs,
-) -> LiteLLMFineTuningJob:
+) -> FineTuningJob:
     """
     Async: Immediately cancel a fine-tune job.
     """
@@ -323,14 +325,13 @@ async def acancel_fine_tuning_job(
         raise e
 
 
-@client
 def cancel_fine_tuning_job(
     fine_tuning_job_id: str,
     custom_llm_provider: Literal["openai", "azure", "vertex_ai"] = "openai",
     extra_headers: Optional[Dict[str, str]] = None,
     extra_body: Optional[Dict[str, str]] = None,
     **kwargs,
-) -> Union[LiteLLMFineTuningJob, Coroutine[Any, Any, LiteLLMFineTuningJob]]:
+) -> Union[FineTuningJob, Coroutine[Any, Any, FineTuningJob]]:
     """
     Immediately cancel a fine-tune job.
 
@@ -608,14 +609,13 @@ def list_fine_tuning_jobs(
         raise e
 
 
-@client
 async def aretrieve_fine_tuning_job(
     fine_tuning_job_id: str,
     custom_llm_provider: Literal["openai", "azure", "vertex_ai"] = "openai",
     extra_headers: Optional[Dict[str, str]] = None,
     extra_body: Optional[Dict[str, str]] = None,
     **kwargs,
-) -> LiteLLMFineTuningJob:
+) -> FineTuningJob:
     """
     Async: Get info about a fine-tuning job.
     """
@@ -646,14 +646,13 @@ async def aretrieve_fine_tuning_job(
         raise e
 
 
-@client
 def retrieve_fine_tuning_job(
     fine_tuning_job_id: str,
     custom_llm_provider: Literal["openai", "azure", "vertex_ai"] = "openai",
     extra_headers: Optional[Dict[str, str]] = None,
     extra_body: Optional[Dict[str, str]] = None,
     **kwargs,
-) -> Union[LiteLLMFineTuningJob, Coroutine[Any, Any, LiteLLMFineTuningJob]]:
+) -> Union[FineTuningJob, Coroutine[Any, Any, FineTuningJob]]:
     """
     Get info about a fine-tuning job.
     """

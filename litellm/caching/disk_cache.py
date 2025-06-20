@@ -13,12 +13,7 @@ else:
 
 class DiskCache(BaseCache):
     def __init__(self, disk_cache_dir: Optional[str] = None):
-        try:
-            import diskcache as dc
-        except ModuleNotFoundError as e:
-            raise ModuleNotFoundError(
-                "Please install litellm with `litellm[caching]` to use disk caching."
-            ) from e
+        import diskcache as dc
 
         # if users don't provider one, use the default litellm cache
         if disk_cache_dir is None:

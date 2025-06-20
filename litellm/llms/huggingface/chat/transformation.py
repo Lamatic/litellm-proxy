@@ -23,21 +23,6 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://router.huggingface.co"
 
 
-def _build_chat_completion_url(model_url: str) -> str:
-    # Strip trailing /
-    model_url = model_url.rstrip("/")
-
-    # Append /chat/completions if not already present
-    if model_url.endswith("/v1"):
-        model_url += "/chat/completions"
-
-    # Append /v1/chat/completions if not already present
-    if not model_url.endswith("/chat/completions"):
-        model_url += "/v1/chat/completions"
-
-    return model_url
-
-
 class HuggingFaceChatConfig(OpenAIGPTConfig):
     """
     Reference: https://huggingface.co/docs/huggingface_hub/guides/inference
@@ -95,18 +80,16 @@ class HuggingFaceChatConfig(OpenAIGPTConfig):
         Get the complete URL for the API call.
         For provider-specific routing through huggingface
         """
-        # Check if api_base is provided
+        # 1. Check if api_base is provided
         if api_base is not None:
             complete_url = api_base
-            complete_url = _build_chat_completion_url(complete_url)
         elif os.getenv("HF_API_BASE") or os.getenv("HUGGINGFACE_API_BASE"):
             complete_url = str(os.getenv("HF_API_BASE")) or str(
                 os.getenv("HUGGINGFACE_API_BASE")
             )
         elif model.startswith(("http://", "https://")):
             complete_url = model
-            complete_url = _build_chat_completion_url(complete_url)
-        # Default construction with provider
+        # 4. Default construction with provider
         else:
             # Parse provider and model
             first_part, remaining = model.split("/", 1)
@@ -118,9 +101,7 @@ class HuggingFaceChatConfig(OpenAIGPTConfig):
             if provider == "hf-inference":
                 route = f"{provider}/models/{model}/v1/chat/completions"
             elif provider == "novita":
-                route = f"{provider}/v3/openai/chat/completions"
-            elif provider == "fireworks-ai":
-                route = f"{provider}/inference/v1/chat/completions"
+                route = f"{provider}/chat/completions"
             else:
                 route = f"{provider}/v1/chat/completions"
             complete_url = f"{BASE_URL}/{route}"
@@ -137,10 +118,6 @@ class HuggingFaceChatConfig(OpenAIGPTConfig):
         litellm_params: dict,
         headers: dict,
     ) -> dict:
-        if litellm_params.get("api_base"):
-            return dict(
-                ChatCompletionRequest(model=model, messages=messages, **optional_params)
-            )
         if "max_retries" in optional_params:
             logger.warning("`max_retries` is not supported. It will be ignored.")
             optional_params.pop("max_retries", None)

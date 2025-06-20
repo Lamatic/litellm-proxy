@@ -1,13 +1,11 @@
 ## This is a template base class to be used for adding new LLM providers via API calls
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import Any, Optional, Union
 
 import httpx
 
 import litellm
-
-if TYPE_CHECKING:
-    from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
-    from litellm.types.utils import ModelResponse, TextCompletionResponse
+from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
+from litellm.types.utils import ModelResponse, TextCompletionResponse
 
 
 class BaseLLM:
@@ -17,7 +15,7 @@ class BaseLLM:
         self,
         model: str,
         response: httpx.Response,
-        model_response: "ModelResponse",
+        model_response: ModelResponse,
         stream: bool,
         logging_obj: Any,
         optional_params: dict,
@@ -26,7 +24,7 @@ class BaseLLM:
         messages: list,
         print_verbose,
         encoding,
-    ) -> Union["ModelResponse", "CustomStreamWrapper"]:
+    ) -> Union[ModelResponse, CustomStreamWrapper]:
         """
         Helper function to process the response across sync + async completion calls
         """
@@ -36,7 +34,7 @@ class BaseLLM:
         self,
         model: str,
         response: httpx.Response,
-        model_response: "TextCompletionResponse",
+        model_response: TextCompletionResponse,
         stream: bool,
         logging_obj: Any,
         optional_params: dict,
@@ -45,7 +43,7 @@ class BaseLLM:
         messages: list,
         print_verbose,
         encoding,
-    ) -> Union["TextCompletionResponse", "CustomStreamWrapper"]:
+    ) -> Union[TextCompletionResponse, CustomStreamWrapper]:
         """
         Helper function to process the response across sync + async completion calls
         """

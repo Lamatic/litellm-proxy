@@ -20,7 +20,6 @@ import {
   ExclamationCircleOutlined,
   PlusCircleOutlined
 } from "@ant-design/icons";
-import { parseErrorMessage } from "./shared/errorUtils";
 
 interface SCIMConfigProps {
   accessToken: string | null;
@@ -68,9 +67,9 @@ const SCIMConfig: React.FC<SCIMConfigProps> = ({ accessToken, userID, proxySetti
       const response = await keyCreateCall(accessToken, userID, formData);
       setTokenData(response);
       message.success("SCIM token created successfully");
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error creating SCIM token:", error);
-      message.error("Failed to create SCIM token: " + parseErrorMessage(error));
+      message.error("Failed to create SCIM token");
     } finally {
       setIsCreatingToken(false);
     }
@@ -175,13 +174,13 @@ const SCIMConfig: React.FC<SCIMConfigProps> = ({ accessToken, userID, proxySetti
                 </Text>
                 <div className="flex items-center">
                   <TextInput
-                    value={tokenData.key}
+                    value={tokenData.token}
                     className="flex-grow mr-2 bg-white"
                     type="password"
                     disabled={true}
                   />
                   <CopyToClipboard
-                    text={tokenData.key}
+                    text={tokenData.token}
                     onCopy={() => message.success("Token copied to clipboard")}
                   >
                     <TremorButton variant="primary" className="flex items-center">

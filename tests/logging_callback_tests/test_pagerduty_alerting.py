@@ -8,11 +8,7 @@ from typing import Optional
 sys.path.insert(0, os.path.abspath("../.."))
 import pytest
 import litellm
-
-from litellm_enterprise.enterprise_callbacks.pagerduty.pagerduty import (
-    PagerDutyAlerting,
-    AlertingConfig,
-)
+from litellm.integrations.pagerduty.pagerduty import PagerDutyAlerting, AlertingConfig
 from litellm.proxy._types import UserAPIKeyAuth
 
 

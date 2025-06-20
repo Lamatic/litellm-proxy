@@ -37,16 +37,6 @@ class RedisPipelineIncrementOperation(TypedDict):
     ttl: Optional[int]
 
 
-class RedisPipelineSetOperation(TypedDict):
-    """
-    TypeDict for 1 Redis Pipeline Set Operation
-    """
-
-    key: str
-    value: Any
-    ttl: Optional[int]
-
-
 DynamicCacheControl = TypedDict(
     "DynamicCacheControl",
     {

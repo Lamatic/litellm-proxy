@@ -9,7 +9,6 @@ Works for:
 - Vertex AI models (Gemini + Anthropic)
 - Bedrock Models
 - Anthropic API Models
-- OpenAI API Models
 
 ## Quick Start
 

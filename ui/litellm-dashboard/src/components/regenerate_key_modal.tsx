@@ -11,7 +11,6 @@ interface RegenerateKeyModalProps {
   visible: boolean;
   onClose: () => void;
   accessToken: string | null;
-  premiumUser: boolean;
 }
 
 export function RegenerateKeyModal({
@@ -19,7 +18,6 @@ export function RegenerateKeyModal({
   visible,
   onClose,
   accessToken,
-  premiumUser,
 }: RegenerateKeyModalProps) {
   const [form] = Form.useForm();
   const [regeneratedKey, setRegeneratedKey] = useState<string | null>(null);

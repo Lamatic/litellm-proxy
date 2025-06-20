@@ -120,16 +120,16 @@ const config = {
             label: 'Docs',
           },
           {
-            sidebarId: 'integrationsSidebar',
-            position: 'left',
-            label: 'Integrations',
-            to: "docs/integrations"
-          },
-          {
             sidebarId: 'tutorialSidebar',
             position: 'left',
             label: 'Enterprise',
             to: "docs/enterprise"
+          },
+          {
+            sidebarId: 'tutorialSidebar',
+            position: 'left',
+            label: 'Hosted',
+            to: "docs/hosted"
           },
           { to: '/release_notes', label: 'Release Notes', position: 'left' },
           {

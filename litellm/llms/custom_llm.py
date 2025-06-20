@@ -8,27 +8,15 @@
 - async_streaming
 """
 
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    AsyncIterator,
-    Callable,
-    Coroutine,
-    Iterator,
-    Optional,
-    Union,
-)
+from typing import Any, AsyncIterator, Callable, Iterator, Optional, Union
 
 import httpx
 
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.types.utils import GenericStreamingChunk
-from litellm.utils import EmbeddingResponse, ImageResponse, ModelResponse
+from litellm.utils import ImageResponse, ModelResponse
 
 from .base import BaseLLM
-
-if TYPE_CHECKING:
-    from litellm import CustomStreamWrapper
 
 
 class CustomLLMError(Exception):  # use this for all your exceptions
@@ -66,7 +54,7 @@ class CustomLLM(BaseLLM):
         headers={},
         timeout: Optional[Union[float, httpx.Timeout]] = None,
         client: Optional[HTTPHandler] = None,
-    ) -> Union[ModelResponse, "CustomStreamWrapper"]:
+    ) -> ModelResponse:
         raise CustomLLMError(status_code=500, message="Not implemented yet!")
 
     def streaming(
@@ -108,10 +96,7 @@ class CustomLLM(BaseLLM):
         headers={},
         timeout: Optional[Union[float, httpx.Timeout]] = None,
         client: Optional[AsyncHTTPHandler] = None,
-    ) -> Union[
-        Coroutine[Any, Any, Union[ModelResponse, "CustomStreamWrapper"]],
-        Union[ModelResponse, "CustomStreamWrapper"],
-    ]:
+    ) -> ModelResponse:
         raise CustomLLMError(status_code=500, message="Not implemented yet!")
 
     async def astreaming(
@@ -165,36 +150,6 @@ class CustomLLM(BaseLLM):
         timeout: Optional[Union[float, httpx.Timeout]] = None,
         client: Optional[AsyncHTTPHandler] = None,
     ) -> ImageResponse:
-        raise CustomLLMError(status_code=500, message="Not implemented yet!")
-
-    def embedding(
-        self,
-        model: str,
-        input: list,
-        model_response: EmbeddingResponse,
-        print_verbose: Callable,
-        logging_obj: Any,
-        optional_params: dict,
-        api_key: Optional[str] = None,
-        api_base: Optional[str] = None,
-        timeout: Optional[Union[float, httpx.Timeout]] = None,
-        litellm_params=None,
-    ) -> EmbeddingResponse:
-        raise CustomLLMError(status_code=500, message="Not implemented yet!")
-
-    async def aembedding(
-        self,
-        model: str,
-        input: list,
-        model_response: EmbeddingResponse,
-        print_verbose: Callable,
-        logging_obj: Any,
-        optional_params: dict,
-        api_key: Optional[str] = None,
-        api_base: Optional[str] = None,
-        timeout: Optional[Union[float, httpx.Timeout]] = None,
-        litellm_params=None,
-    ) -> EmbeddingResponse:
         raise CustomLLMError(status_code=500, message="Not implemented yet!")
 
 

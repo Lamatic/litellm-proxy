@@ -1,4 +1,3 @@
-# ruff: noqa: T201
 import importlib
 import json
 import os
@@ -11,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 import click
 import httpx
 from dotenv import load_dotenv
-import urllib.parse
+
 if TYPE_CHECKING:
     from fastapi import FastAPI
 else:
@@ -118,7 +117,6 @@ class ProxyInitializationHelpers:
         host: str,
         port: int,
         log_config: Optional[str] = None,
-        keepalive_timeout: Optional[int] = None,
     ) -> dict:
         """
         Get the arguments for `uvicorn` worker
@@ -136,8 +134,6 @@ class ProxyInitializationHelpers:
         elif litellm.json_logs:
             print("Using json logs. Setting log_config to None.")  # noqa
             uvicorn_args["log_config"] = None
-        if keepalive_timeout is not None:
-            uvicorn_args["timeout_keep_alive"] = keepalive_timeout
         return uvicorn_args
 
     @staticmethod
@@ -462,19 +458,6 @@ class ProxyInitializationHelpers:
     help="Use prisma migrate instead of prisma db push for database schema updates",
 )
 @click.option("--local", is_flag=True, default=False, help="for local debugging")
-@click.option(
-    "--skip_server_startup",
-    is_flag=True,
-    default=False,
-    help="Skip starting the server after setup (useful for migrations only)",
-)
-@click.option(
-    "--keepalive_timeout",
-    default=None,
-    type=int,
-    help="Set the uvicorn keepalive timeout in seconds (uvicorn timeout_keep_alive parameter)",
-    envvar="KEEPALIVE_TIMEOUT",
-)
 def run_server(  # noqa: PLR0915
     host,
     port,
@@ -510,8 +493,6 @@ def run_server(  # noqa: PLR0915
     ssl_certfile_path,
     log_config,
     use_prisma_migrate,
-    skip_server_startup,
-    keepalive_timeout,
 ):
     args = locals()
     if local:
@@ -670,7 +651,7 @@ def run_server(  # noqa: PLR0915
                     **key_management_settings
                 )
             database_url = general_settings.get("database_url", None)
-            if database_url is None and os.getenv("DATABASE_URL") is None:
+            if database_url is None:
                 # Check if all required variables are provided
                 database_host = os.getenv("DATABASE_HOST")
                 database_username = os.getenv("DATABASE_USERNAME")
@@ -683,14 +664,8 @@ def run_server(  # noqa: PLR0915
                     and database_password
                     and database_name
                 ):
-                    # Handle the problem of special character escaping in the database URL
-                    database_username_enc = urllib.parse.quote_plus(database_username)
-                    database_password_enc = urllib.parse.quote_plus(database_password)
-                    database_name_enc = urllib.parse.quote_plus(database_name)
-
                     # Construct DATABASE_URL from the provided variables
-                    database_url = f"postgresql://{database_username_enc}:{database_password_enc}@{database_host}/{database_name_enc}"
-
+                    database_url = f"postgresql://{database_username}:{database_password}@{database_host}/{database_name}"
                     os.environ["DATABASE_URL"] = database_url
             db_connection_pool_limit = general_settings.get(
                 "database_connection_pool_limit",
@@ -776,16 +751,10 @@ def run_server(  # noqa: PLR0915
         # DO NOT DELETE - enables global variables to work across files
         from litellm.proxy.proxy_server import app  # noqa
 
-        # Skip server startup if requested (after all setup is done)
-        if skip_server_startup:
-            print("LiteLLM: Setup complete. Skipping server startup as requested.")  # noqa
-            return
-
         uvicorn_args = ProxyInitializationHelpers._get_default_unvicorn_init_args(
             host=host,
             port=port,
             log_config=log_config,
-            keepalive_timeout=keepalive_timeout,
         )
         if run_gunicorn is False and run_hypercorn is False:
             if ssl_certfile_path is not None and ssl_keyfile_path is not None:

@@ -81,9 +81,6 @@ export const prepareModelAddRequest = async (
           else if (key === "team_id") {
             modelInfoObj["team_id"] = value;
           }
-          else if (key === "model_access_group") {
-            modelInfoObj["access_groups"] = value;
-          }
           else if (key == "mode") {
             console.log("placing mode in modelInfo")
             modelInfoObj["mode"] = value;

@@ -105,7 +105,6 @@ class AzureOpenAIConfig(BaseConfig):
             "prediction",
             "modalities",
             "audio",
-            "web_search_options",
         ]
 
     def _is_response_format_supported_model(self, model: str) -> bool:

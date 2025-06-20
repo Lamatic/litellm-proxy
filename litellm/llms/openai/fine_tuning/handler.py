@@ -1,10 +1,10 @@
-from typing import Any, Coroutine, Optional, Union, cast
+from typing import Any, Coroutine, Optional, Union
 
 import httpx
 from openai import AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, OpenAI
+from openai.types.fine_tuning import FineTuningJob
 
 from litellm._logging import verbose_logger
-from litellm.types.utils import LiteLLMFineTuningJob
 
 
 class OpenAIFineTuningAPI:
@@ -55,12 +55,11 @@ class OpenAIFineTuningAPI:
         self,
         create_fine_tuning_job_data: dict,
         openai_client: Union[AsyncOpenAI, AsyncAzureOpenAI],
-    ) -> LiteLLMFineTuningJob:
+    ) -> FineTuningJob:
         response = await openai_client.fine_tuning.jobs.create(
             **create_fine_tuning_job_data
         )
-
-        return LiteLLMFineTuningJob(**response.model_dump())
+        return response
 
     def create_fine_tuning_job(
         self,
@@ -75,7 +74,7 @@ class OpenAIFineTuningAPI:
         client: Optional[
             Union[OpenAI, AsyncOpenAI, AzureOpenAI, AsyncAzureOpenAI]
         ] = None,
-    ) -> Union[LiteLLMFineTuningJob, Coroutine[Any, Any, LiteLLMFineTuningJob]]:
+    ) -> Union[FineTuningJob, Coroutine[Any, Any, FineTuningJob]]:
         openai_client: Optional[
             Union[OpenAI, AsyncOpenAI, AzureOpenAI, AsyncAzureOpenAI]
         ] = self.get_openai_client(
@@ -105,20 +104,18 @@ class OpenAIFineTuningAPI:
         verbose_logger.debug(
             "creating fine tuning job, args= %s", create_fine_tuning_job_data
         )
-        response = cast(OpenAI, openai_client).fine_tuning.jobs.create(
-            **create_fine_tuning_job_data
-        )
-        return LiteLLMFineTuningJob(**response.model_dump())
+        response = openai_client.fine_tuning.jobs.create(**create_fine_tuning_job_data)
+        return response
 
     async def acancel_fine_tuning_job(
         self,
         fine_tuning_job_id: str,
         openai_client: Union[AsyncOpenAI, AsyncAzureOpenAI],
-    ) -> LiteLLMFineTuningJob:
+    ) -> FineTuningJob:
         response = await openai_client.fine_tuning.jobs.cancel(
             fine_tuning_job_id=fine_tuning_job_id
         )
-        return LiteLLMFineTuningJob(**response.model_dump())
+        return response
 
     def cancel_fine_tuning_job(
         self,
@@ -133,7 +130,7 @@ class OpenAIFineTuningAPI:
         client: Optional[
             Union[OpenAI, AsyncOpenAI, AzureOpenAI, AsyncAzureOpenAI]
         ] = None,
-    ) -> Union[LiteLLMFineTuningJob, Coroutine[Any, Any, LiteLLMFineTuningJob]]:
+    ):
         openai_client: Optional[
             Union[OpenAI, AsyncOpenAI, AzureOpenAI, AsyncAzureOpenAI]
         ] = self.get_openai_client(
@@ -161,10 +158,10 @@ class OpenAIFineTuningAPI:
                 openai_client=openai_client,
             )
         verbose_logger.debug("canceling fine tuning job, args= %s", fine_tuning_job_id)
-        response = cast(OpenAI, openai_client).fine_tuning.jobs.cancel(
+        response = openai_client.fine_tuning.jobs.cancel(
             fine_tuning_job_id=fine_tuning_job_id
         )
-        return LiteLLMFineTuningJob(**response.model_dump())
+        return response
 
     async def alist_fine_tuning_jobs(
         self,
@@ -225,11 +222,11 @@ class OpenAIFineTuningAPI:
         self,
         fine_tuning_job_id: str,
         openai_client: Union[AsyncOpenAI, AsyncAzureOpenAI],
-    ) -> LiteLLMFineTuningJob:
+    ) -> FineTuningJob:
         response = await openai_client.fine_tuning.jobs.retrieve(
             fine_tuning_job_id=fine_tuning_job_id
         )
-        return LiteLLMFineTuningJob(**response.model_dump())
+        return response
 
     def retrieve_fine_tuning_job(
         self,
@@ -244,7 +241,7 @@ class OpenAIFineTuningAPI:
         client: Optional[
             Union[OpenAI, AsyncOpenAI, AzureOpenAI, AsyncAzureOpenAI]
         ] = None,
-    ) -> Union[LiteLLMFineTuningJob, Coroutine[Any, Any, LiteLLMFineTuningJob]]:
+    ):
         openai_client: Optional[
             Union[OpenAI, AsyncOpenAI, AzureOpenAI, AsyncAzureOpenAI]
         ] = self.get_openai_client(
@@ -272,7 +269,7 @@ class OpenAIFineTuningAPI:
                 openai_client=openai_client,
             )
         verbose_logger.debug("retrieving fine tuning job, id= %s", fine_tuning_job_id)
-        response = cast(OpenAI, openai_client).fine_tuning.jobs.retrieve(
+        response = openai_client.fine_tuning.jobs.retrieve(
             fine_tuning_job_id=fine_tuning_job_id
         )
-        return LiteLLMFineTuningJob(**response.model_dump())
+        return response

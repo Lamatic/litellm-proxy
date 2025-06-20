@@ -39,7 +39,6 @@ class MyCustomHandler(
         request_data: dict,
         original_exception: Exception,
         user_api_key_dict: UserAPIKeyAuth,
-        traceback_str: Optional[str] = None,
     ):
         pass
 

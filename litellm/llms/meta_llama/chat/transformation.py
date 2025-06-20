@@ -6,11 +6,9 @@ Calls done in OpenAI/openai.py as Llama API is openai-compatible.
 Docs: https://llama.developer.meta.com/docs/features/compatibility/
 """
 
-import warnings
+from typing import Optional
 
-# Suppress Pydantic serialization warnings for Meta Llama responses
-warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
-
+from litellm import get_model_info, verbose_logger
 from litellm.llms.openai.chat.gpt_transformation import OpenAIGPTConfig
 
 
@@ -19,11 +17,27 @@ class LlamaAPIConfig(OpenAIGPTConfig):
         """
         Llama API has limited support for OpenAI parameters
 
-        function_call, tools, and tool_choice are working
+        Tool calling, Functional Calling, tool choice are not working right now
         response_format: only json_schema is working
         """
-        # Function calling and tool choice are now supported on Llama API
+        supports_function_calling: Optional[bool] = None
+        supports_tool_choice: Optional[bool] = None
+        try:
+            model_info = get_model_info(model, custom_llm_provider="meta_llama")
+            supports_function_calling = model_info.get(
+                "supports_function_calling", False
+            )
+            supports_tool_choice = model_info.get("supports_tool_choice", False)
+        except Exception as e:
+            verbose_logger.debug(f"Error getting supported openai params: {e}")
+            pass
+
         optional_params = super().get_supported_openai_params(model)
+        if not supports_function_calling:
+            optional_params.remove("function_call")
+        if not supports_tool_choice:
+            optional_params.remove("tools")
+            optional_params.remove("tool_choice")
         return optional_params
 
     def map_openai_params(

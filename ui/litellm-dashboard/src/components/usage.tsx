@@ -41,6 +41,11 @@ import {
 import { start } from "repl";
 import TopKeyView from "./top_key_view";
 console.log("process.env.NODE_ENV", process.env.NODE_ENV);
+const isLocal = process.env.NODE_ENV === "development";
+const proxyBaseUrl = isLocal ? "http://localhost:4000" : null;
+if (isLocal !== true) {
+  console.log = function() {};
+}
 
 interface UsagePageProps {
   accessToken: string | null;
@@ -660,7 +665,6 @@ const UsagePage: React.FC<UsagePageProps> = ({
                     userID={userID}
                     userRole={userRole}
                     teams={null}
-                    premiumUser={premiumUser}
                   />
                 </Card>
               </Col>

@@ -553,7 +553,7 @@ async def test_completion_predibase_streaming(sync_mode):
 async def test_completion_ai21_stream():
     litellm.set_verbose = True
     response = await litellm.acompletion(
-        model="ai21_chat/jamba-mini",
+        model="ai21_chat/jamba-1.5-large",
         user="ishaan",
         stream=True,
         seed=123,
@@ -712,7 +712,7 @@ async def test_acompletion_claude_2_stream():
 @pytest.mark.flaky(retries=3, delay=1)
 async def test_completion_gemini_stream(sync_mode):
     try:
-        litellm._turn_on_debug()
+        litellm.set_verbose = True
         print("Streaming gemini response")
         function1 = [
             {

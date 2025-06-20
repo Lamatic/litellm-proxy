@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional, Set
 
-from litellm.constants import DEFAULT_MAX_RECURSE_DEPTH_SENSITIVE_DATA_MASKER
+from litellm.constants import DEFAULT_MAX_RECURSE_DEPTH
 
 
 class SensitiveDataMasker:
@@ -44,7 +44,7 @@ class SensitiveDataMasker:
         self,
         data: Dict[str, Any],
         depth: int = 0,
-        max_depth: int = DEFAULT_MAX_RECURSE_DEPTH_SENSITIVE_DATA_MASKER,
+        max_depth: int = DEFAULT_MAX_RECURSE_DEPTH,
     ) -> Dict[str, Any]:
         if depth >= max_depth:
             return data

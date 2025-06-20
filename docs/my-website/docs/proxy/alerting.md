@@ -148,7 +148,7 @@ client = openai.OpenAI(
 
 # request sent to model set on litellm proxy, `litellm --model`
 response = client.chat.completions.create(
-    model="gpt-4o",
+    model="gpt-3.5-turbo",
     messages = [], 
     extra_body={
         "metadata": {

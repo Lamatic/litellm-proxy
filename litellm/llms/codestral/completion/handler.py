@@ -9,7 +9,6 @@ import httpx  # type: ignore
 
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLogging
-from litellm.litellm_core_utils.logging_utils import track_llm_api_timing
 from litellm.litellm_core_utils.prompt_templates.factory import (
     custom_prompt,
     prompt_factory,
@@ -334,7 +333,6 @@ class CodestralTextCompletion:
             encoding=encoding,
         )
 
-    @track_llm_api_timing()
     async def async_completion(
         self,
         model: str,
@@ -384,7 +382,6 @@ class CodestralTextCompletion:
             encoding=encoding,
         )
 
-    @track_llm_api_timing()
     async def async_streaming(
         self,
         model: str,
