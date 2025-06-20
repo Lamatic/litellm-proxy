@@ -2,7 +2,7 @@
 import warnings
 
 warnings.filterwarnings("ignore", message=".*conflict with protected namespace.*")
-### INIT VARIABLES ###########
+### INIT VARIABLES ############
 import threading
 import os
 from typing import Callable, List, Optional, Dict, Union, Any, Literal, get_args
@@ -109,6 +109,7 @@ _custom_logger_compatible_callbacks_literal = Literal[
     "argilla",
     "mlflow",
     "langfuse",
+    "langfuse_otel",
     "pagerduty",
     "humanloop",
     "gcs_pubsub",
@@ -117,6 +118,9 @@ _custom_logger_compatible_callbacks_literal = Literal[
     "bedrock_vector_store",
     "generic_api",
     "resend_email",
+    "smtp_email",
+    "deepeval",
+    "s3_v2",
 ]
 logged_real_time_event_types: Optional[Union[List[str], Literal["*"]]] = None
 _known_custom_logger_compatible_callbacks: List = list(
@@ -125,12 +129,13 @@ _known_custom_logger_compatible_callbacks: List = list(
 callbacks: List[
     Union[Callable, _custom_logger_compatible_callbacks_literal, CustomLogger]
 ] = []
+initialized_langfuse_clients: int = 0
 langfuse_default_tags: Optional[List[str]] = None
 langsmith_batch_size: Optional[int] = None
 prometheus_initialize_budget_metrics: Optional[bool] = False
 require_auth_for_metrics_endpoint: Optional[bool] = False
 argilla_batch_size: Optional[int] = None
-datadog_use_v1: Optional[bool] = False  # if you want to use v1 datadog logged payload
+datadog_use_v1: Optional[bool] = False  # if you want to use v1 datadog logged payload.
 gcs_pub_sub_use_v1: Optional[bool] = (
     False  # if you want to use v1 gcs pubsub logged payload
 )
@@ -187,6 +192,7 @@ maritalk_key: Optional[str] = None
 ai21_key: Optional[str] = None
 ollama_key: Optional[str] = None
 openrouter_key: Optional[str] = None
+datarobot_key: Optional[str] = None
 predibase_key: Optional[str] = None
 huggingface_key: Optional[str] = None
 vertex_project: Optional[str] = None
@@ -198,16 +204,23 @@ baseten_key: Optional[str] = None
 llama_api_key: Optional[str] = None
 aleph_alpha_key: Optional[str] = None
 nlp_cloud_key: Optional[str] = None
+novita_api_key: Optional[str] = None
 snowflake_key: Optional[str] = None
+nebius_key: Optional[str] = None
 common_cloud_provider_auth_params: dict = {
     "params": ["project", "region_name", "token"],
     "providers": ["vertex_ai", "bedrock", "watsonx", "azure", "vertex_ai_beta"],
 }
+use_litellm_proxy: bool = (
+    False  # when True, requests will be sent to the specified litellm proxy endpoint
+)
 use_client: bool = False
 ssl_verify: Union[str, bool] = True
 ssl_certificate: Optional[str] = None
 disable_streaming_logging: bool = False
+disable_token_counter: bool = False
 disable_add_transform_inline_image_block: bool = False
+disable_add_user_agent_to_request_tags: bool = False
 in_memory_llm_clients_cache: LLMClientCache = LLMClientCache()
 safe_memory_mode: bool = False
 enable_azure_ad_token_refresh: Optional[bool] = False
@@ -296,9 +309,21 @@ tag_budget_config: Optional[Dict[str, BudgetConfig]] = None
 max_end_user_budget: Optional[float] = None
 disable_end_user_cost_tracking: Optional[bool] = None
 disable_end_user_cost_tracking_prometheus_only: Optional[bool] = None
+enable_end_user_cost_tracking_prometheus_only: Optional[bool] = None
 custom_prometheus_metadata_labels: List[str] = []
-#### REQUEST PRIORITIZATION ####
+prometheus_metrics_config: Optional[List] = None
+disable_add_prefix_to_prompt: bool = (
+    False  # used by anthropic, to disable adding prefix to prompt
+)
+#### REQUEST PRIORITIZATION #####
 priority_reservation: Optional[Dict[str, float]] = None
+
+
+######## Networking Settings ########
+use_aiohttp_transport: bool = (
+    True  # Older variable, aiohttp is now the default. use disable_aiohttp_transport instead.
+)
+disable_aiohttp_transport: bool = False  # Set this to true to use httpx instead
 force_ipv4: bool = (
     False  # when True, litellm will force ipv4 for all LLM requests. Some users have seen httpx ConnectionError when using ipv6.
 )
@@ -359,6 +384,8 @@ project = None
 config_path = None
 vertex_ai_safety_settings: Optional[dict] = None
 BEDROCK_CONVERSE_MODELS = [
+    "anthropic.claude-opus-4-20250514-v1:0",
+    "anthropic.claude-sonnet-4-20250514-v1:0",
     "anthropic.claude-3-7-sonnet-20250219-v1:0",
     "anthropic.claude-3-5-haiku-20241022-v1:0",
     "anthropic.claude-3-5-sonnet-20241022-v2:0",
@@ -371,6 +398,8 @@ BEDROCK_CONVERSE_MODELS = [
     "anthropic.claude-v1",
     "anthropic.claude-instant-v1",
     "ai21.jamba-instruct-v1:0",
+    "ai21.jamba-1-5-mini-v1:0",
+    "ai21.jamba-1-5-large-v1:0",
     "meta.llama3-70b-instruct-v1:0",
     "meta.llama3-8b-instruct-v1:0",
     "meta.llama3-1-8b-instruct-v1:0",
@@ -379,6 +408,7 @@ BEDROCK_CONVERSE_MODELS = [
     "meta.llama3-70b-instruct-v1:0",
     "mistral.mistral-large-2407-v1:0",
     "mistral.mistral-large-2402-v1:0",
+    "mistral.mistral-small-2402-v1:0",
     "meta.llama3-2-1b-instruct-v1:0",
     "meta.llama3-2-3b-instruct-v1:0",
     "meta.llama3-2-11b-instruct-v1:0",
@@ -394,6 +424,7 @@ mistral_chat_models: List = []
 text_completion_codestral_models: List = []
 anthropic_models: List = []
 openrouter_models: List = []
+datarobot_models: List = []
 vertex_language_models: List = []
 vertex_vision_models: List = []
 vertex_chat_models: List = []
@@ -428,6 +459,7 @@ databricks_models: List = []
 cloudflare_models: List = []
 codestral_models: List = []
 friendliai_models: List = []
+featherless_ai_models: List = []
 palm_models: List = []
 groq_models: List = []
 azure_models: List = []
@@ -436,9 +468,14 @@ anyscale_models: List = []
 cerebras_models: List = []
 galadriel_models: List = []
 sambanova_models: List = []
+novita_models: List = []
 assemblyai_models: List = []
 snowflake_models: List = []
 llama_models: List = []
+nscale_models: List = []
+nebius_models: List = []
+nebius_embedding_models: List = []
+deepgram_models: List = []
 
 
 def is_bedrock_pricing_only_model(key: str) -> bool:
@@ -496,6 +533,8 @@ def add_known_models():
             empower_models.append(key)
         elif value.get("litellm_provider") == "openrouter":
             openrouter_models.append(key)
+        elif value.get("litellm_provider") == "datarobot":
+            datarobot_models.append(key)
         elif value.get("litellm_provider") == "vertex_ai-text-models":
             vertex_text_models.append(key)
         elif value.get("litellm_provider") == "vertex_ai-code-text-models":
@@ -564,6 +603,8 @@ def add_known_models():
             deepseek_models.append(key)
         elif value.get("litellm_provider") == "meta_llama":
             llama_models.append(key)
+        elif value.get("litellm_provider") == "nscale":
+            nscale_models.append(key)
         elif value.get("litellm_provider") == "azure_ai":
             azure_ai_models.append(key)
         elif value.get("litellm_provider") == "voyage":
@@ -590,14 +631,24 @@ def add_known_models():
             cerebras_models.append(key)
         elif value.get("litellm_provider") == "galadriel":
             galadriel_models.append(key)
-        elif value.get("litellm_provider") == "sambanova_models":
+        elif value.get("litellm_provider") == "sambanova":
             sambanova_models.append(key)
+        elif value.get("litellm_provider") == "novita":
+            novita_models.append(key)
+        elif value.get("litellm_provider") == "nebius-chat-models":
+            nebius_models.append(key)
+        elif value.get("litellm_provider") == "nebius-embedding-models":
+            nebius_embedding_models.append(key)
         elif value.get("litellm_provider") == "assemblyai":
             assemblyai_models.append(key)
         elif value.get("litellm_provider") == "jina_ai":
             jina_ai_models.append(key)
         elif value.get("litellm_provider") == "snowflake":
             snowflake_models.append(key)
+        elif value.get("litellm_provider") == "featherless_ai":
+            featherless_ai_models.append(key)
+        elif value.get("litellm_provider") == "deepgram":
+            deepgram_models.append(key)
 
 
 add_known_models()
@@ -636,6 +687,7 @@ model_list = (
     + anthropic_models
     + replicate_models
     + openrouter_models
+    + datarobot_models
     + huggingface_models
     + vertex_chat_models
     + vertex_text_models
@@ -671,10 +723,14 @@ model_list = (
     + galadriel_models
     + sambanova_models
     + azure_text_models
+    + novita_models
     + assemblyai_models
     + jina_ai_models
     + snowflake_models
     + llama_models
+    + featherless_ai_models
+    + nscale_models
+    + deepgram_models
 )
 
 model_list_set = set(model_list)
@@ -693,6 +749,7 @@ models_by_provider: dict = {
     "together_ai": together_ai_models,
     "baseten": baseten_models,
     "openrouter": openrouter_models,
+    "datarobot": datarobot_models,
     "vertex_ai": vertex_chat_models
     + vertex_text_models
     + vertex_anthropic_models
@@ -729,10 +786,15 @@ models_by_provider: dict = {
     "cerebras": cerebras_models,
     "galadriel": galadriel_models,
     "sambanova": sambanova_models,
+    "novita": novita_models,
+    "nebius": nebius_models + nebius_embedding_models,
     "assemblyai": assemblyai_models,
     "jina_ai": jina_ai_models,
     "snowflake": snowflake_models,
     "meta_llama": llama_models,
+    "nscale": nscale_models,
+    "featherless_ai": featherless_ai_models,
+    "deepgram": deepgram_models,
 }
 
 # mapping for those models which have larger equivalents
@@ -765,6 +827,7 @@ all_embedding_models = (
     + bedrock_embedding_models
     + vertex_embedding_models
     + fireworks_ai_embedding_models
+    + nebius_embedding_models
 )
 
 ####### IMAGE GENERATION MODELS ###################
@@ -786,6 +849,7 @@ from .utils import (
     create_tokenizer,
     supports_function_calling,
     supports_web_search,
+    supports_url_context,
     supports_response_schema,
     supports_parallel_function_calling,
     supports_vision,
@@ -816,6 +880,7 @@ from .utils import (
     TextCompletionResponse,
     get_provider_fields,
     ModelResponseListIterator,
+    get_valid_models,
 )
 
 ALL_LITELLM_RESPONSE_TYPES = [
@@ -838,6 +903,7 @@ from .llms.huggingface.embedding.transformation import HuggingFaceEmbeddingConfi
 from .llms.oobabooga.chat.transformation import OobaboogaConfig
 from .llms.maritalk import MaritalkConfig
 from .llms.openrouter.chat.transformation import OpenrouterConfig
+from .llms.datarobot.chat.transformation import DataRobotConfig
 from .llms.anthropic.chat.transformation import AnthropicConfig
 from .llms.anthropic.common_utils import AnthropicModelInfo
 from .llms.groq.stt.transformation import GroqSTTConfig
@@ -846,6 +912,7 @@ from .llms.triton.completion.transformation import TritonConfig
 from .llms.triton.completion.transformation import TritonGenerateConfig
 from .llms.triton.completion.transformation import TritonInferConfig
 from .llms.triton.embedding.transformation import TritonEmbeddingConfig
+from .llms.huggingface.rerank.transformation import HuggingFaceRerankConfig
 from .llms.databricks.chat.transformation import DatabricksConfig
 from .llms.databricks.embed.transformation import DatabricksEmbeddingConfig
 from .llms.predibase.chat.transformation import PredibaseConfig
@@ -863,9 +930,13 @@ from .llms.meta_llama.chat.transformation import LlamaAPIConfig
 from .llms.anthropic.experimental_pass_through.messages.transformation import (
     AnthropicMessagesConfig,
 )
+from .llms.bedrock.messages.invoke_transformations.anthropic_claude3_transformation import (
+    AmazonAnthropicClaude3MessagesConfig,
+)
 from .llms.together_ai.chat import TogetherAIConfig
 from .llms.together_ai.completion.transformation import TogetherAITextCompletionConfig
 from .llms.cloudflare.chat.transformation import CloudflareChatConfig
+from .llms.novita.chat.transformation import NovitaConfig
 from .llms.deprecated_providers.palm import (
     PalmConfig,
 )  # here to prevent breaking changes
@@ -898,11 +969,10 @@ from .llms.vertex_ai.vertex_ai_partner_models.llama3.transformation import (
 from .llms.vertex_ai.vertex_ai_partner_models.ai21.transformation import (
     VertexAIAi21Config,
 )
-
+from .llms.ollama.chat.transformation import OllamaChatConfig
 from .llms.ollama.completion.transformation import OllamaConfig
 from .llms.sagemaker.completion.transformation import SagemakerConfig
 from .llms.sagemaker.chat.transformation import SagemakerChatConfig
-from .llms.ollama_chat import OllamaChatConfig
 from .llms.bedrock.chat.invoke_handler import (
     AmazonCohereChatConfig,
     bedrock_tool_name_mappings,
@@ -995,12 +1065,13 @@ from .llms.openai.chat.gpt_audio_transformation import (
 
 openAIGPTAudioConfig = OpenAIGPTAudioConfig()
 
-from .llms.nvidia_nim.chat import NvidiaNimConfig
+from .llms.nvidia_nim.chat.transformation import NvidiaNimConfig
 from .llms.nvidia_nim.embed import NvidiaNimEmbeddingConfig
 
 nvidiaNimConfig = NvidiaNimConfig()
 nvidiaNimEmbeddingConfig = NvidiaNimEmbeddingConfig()
 
+from .llms.featherless_ai.chat.transformation import FeatherlessAIConfig
 from .llms.cerebras.chat import CerebrasConfig
 from .llms.sambanova.chat import SambanovaConfig
 from .llms.ai21.chat.transformation import AI21ChatConfig
@@ -1032,11 +1103,13 @@ from .llms.vllm.completion.transformation import VLLMConfig
 from .llms.deepseek.chat.transformation import DeepSeekChatConfig
 from .llms.lm_studio.chat.transformation import LMStudioChatConfig
 from .llms.lm_studio.embed.transformation import LmStudioEmbeddingConfig
+from .llms.nscale.chat.transformation import NscaleConfig
 from .llms.perplexity.chat.transformation import PerplexityChatConfig
 from .llms.azure.chat.o_series_transformation import AzureOpenAIO1Config
 from .llms.watsonx.completion.transformation import IBMWatsonXAIConfig
 from .llms.watsonx.chat.transformation import IBMWatsonXChatConfig
 from .llms.watsonx.embed.transformation import IBMWatsonXEmbeddingConfig
+from .llms.nebius.chat.transformation import NebiusConfig
 from .main import *  # type: ignore
 from .integrations import *
 from .exceptions import (
@@ -1066,6 +1139,7 @@ from .proxy.proxy_cli import run_server
 from .router import Router
 from .assistants.main import *
 from .batches.main import *
+from .images.main import *
 from .batch_completion.main import *  # type: ignore
 from .rerank_api.main import *
 from .llms.anthropic.experimental_pass_through.messages.handler import *
@@ -1099,3 +1173,6 @@ disable_hf_tokenizer_download: Optional[bool] = (
     None  # disable huggingface tokenizer download. Defaults to openai clk100
 )
 global_disable_no_log_param: bool = False
+
+### PASSTHROUGH ###
+from .passthrough import allm_passthrough_route, llm_passthrough_route

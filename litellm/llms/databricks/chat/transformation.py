@@ -6,12 +6,15 @@ from typing import (
     TYPE_CHECKING,
     Any,
     AsyncIterator,
+    Coroutine,
     Iterator,
     List,
+    Literal,
     Optional,
     Tuple,
     Union,
     cast,
+    overload,
 )
 
 import httpx
@@ -181,7 +184,9 @@ class DatabricksConfig(DatabricksBase, OpenAILikeChatConfig, AnthropicConfig):
             return tools
 
         # if claude, convert to anthropic tool and then to databricks tool
-        anthropic_tools = self._map_tools(tools=tools)
+        anthropic_tools, _ = self._map_tools(
+            tools=tools
+        )  # unclear how mcp tool calling on databricks works
         databricks_tools = [
             cast(DatabricksTool, self.convert_anthropic_tool_to_databricks_tool(tool))
             for tool in anthropic_tools
@@ -276,9 +281,24 @@ class DatabricksConfig(DatabricksBase, OpenAILikeChatConfig, AnthropicConfig):
 
         return False
 
+    @overload
     def _transform_messages(
-        self, messages: List[AllMessageValues], model: str
+        self, messages: List[AllMessageValues], model: str, is_async: Literal[True]
+    ) -> Coroutine[Any, Any, List[AllMessageValues]]:
+        ...
+
+    @overload
+    def _transform_messages(
+        self,
+        messages: List[AllMessageValues],
+        model: str,
+        is_async: Literal[False] = False,
     ) -> List[AllMessageValues]:
+        ...
+
+    def _transform_messages(
+        self, messages: List[AllMessageValues], model: str, is_async: bool = False
+    ) -> Union[List[AllMessageValues], Coroutine[Any, Any, List[AllMessageValues]]]:
         """
         Databricks does not support:
         - content in list format.
@@ -293,7 +313,15 @@ class DatabricksConfig(DatabricksBase, OpenAILikeChatConfig, AnthropicConfig):
             new_messages.append(_message)
         new_messages = handle_messages_with_content_list_to_str_conversion(new_messages)
         new_messages = strip_name_from_messages(new_messages)
-        return super()._transform_messages(messages=new_messages, model=model)
+
+        if is_async:
+            return super()._transform_messages(
+                messages=new_messages, model=model, is_async=cast(Literal[True], True)
+            )
+        else:
+            return super()._transform_messages(
+                messages=new_messages, model=model, is_async=cast(Literal[False], False)
+            )
 
     @staticmethod
     def extract_content_str(
