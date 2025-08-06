@@ -41,7 +41,9 @@ class BaseLLMModelInfo(ABC):
 
     @staticmethod
     @abstractmethod
-    def get_api_base(api_base: Optional[str] = None) -> Optional[str]:
+    def get_api_base(
+        api_base: Optional[str] = None,
+    ) -> Optional[str]:
         pass
 
     @abstractmethod
@@ -67,6 +69,16 @@ class BaseLLMModelInfo(ABC):
             This function will return `anthropic.claude-3-opus-20240229-v1:0`
         """
         pass
+
+    def get_token_counter(self):
+        """
+        Factory method to create a token counter for this provider.
+        
+        Returns:
+            Optional TokenCounterInterface implementation for this provider,
+            or None if token counting is not supported.
+        """
+        return None
 
 
 def _convert_tool_response_to_message(

@@ -3971,11 +3971,12 @@ def test_completion_hf_prompt_array():
 # test_completion_hf_prompt_array()
 
 
+@pytest.mark.skip(reason="HF Inference API is unstable, this is now the 3rd time it's stopped working")
 def test_text_completion_stream():
     try:
         for _ in range(2):  # check if closed client used
             response = text_completion(
-                model="huggingface/sarvamai/sarvam-m",
+                model="huggingface/deepseek-ai/DeepSeek-R1",
                 prompt="good morning",
                 stream=True,
                 max_tokens=10,
@@ -4151,7 +4152,7 @@ def test_completion_vllm(provider):
         client.completions.with_raw_response, "create", side_effect=mock_post
     ) as mock_call:
         response = text_completion(
-            model="{provider}/gemini-1.5-flash".format(provider=provider),
+            model="{provider}/gemini-2.5-flash-lite".format(provider=provider),
             prompt="ping",
             client=client,
             hello="world",

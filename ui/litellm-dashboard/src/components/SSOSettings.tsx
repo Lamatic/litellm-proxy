@@ -5,6 +5,7 @@ import { PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import { getInternalUserSettings, updateInternalUserSettings, modelAvailableCall } from "./networking";
 import BudgetDurationDropdown, { getBudgetDurationLabel } from "./common_components/budget_duration_dropdown";
 import { getModelDisplayName } from "./key_team_helpers/fetch_available_models_team_key";
+import { formatNumberWithCommas } from "@/utils/dataUtils";
 
 interface SSOSettingsProps {
   accessToken: string | null;
@@ -69,12 +70,18 @@ const SSOSettings: React.FC<SSOSettingsProps> = ({ accessToken, possibleUIRoles,
     
     setSaving(true);
     try {
-      const updatedSettings = await updateInternalUserSettings(accessToken, editedValues);
+      // Convert empty strings to null
+      const processedValues = Object.entries(editedValues).reduce((acc, [key, value]) => {
+        acc[key] = value === "" ? null : value;
+        return acc;
+      }, {} as Record<string, any>);
+      
+      const updatedSettings = await updateInternalUserSettings(accessToken, processedValues);
       setSettings({...settings, values: updatedSettings.settings});
       setIsEditing(false);
     } catch (error) {
       console.error("Error updating SSO settings:", error);
-      message.error("Failed to update settings");
+      message.error("Failed to update settings: " + error);
     } finally {
       setSaving(false);
     }
@@ -273,6 +280,7 @@ const SSOSettings: React.FC<SSOSettingsProps> = ({ accessToken, possibleUIRoles,
           onChange={(value) => handleTextInputChange(key, value)}
           className="mt-2"
         >
+          <Option value="no-default-models">No Default Models</Option>
           {availableModels.map((model: string) => (
             <Option key={model} value={model}>
               {getModelDisplayName(model)}
@@ -326,7 +334,7 @@ const SSOSettings: React.FC<SSOSettingsProps> = ({ accessToken, possibleUIRoles,
                   <span className="font-medium text-gray-600">Max Budget:</span>
                   <p className="text-gray-900">
                     {team.max_budget_in_team !== undefined 
-                      ? `$${team.max_budget_in_team}` 
+                      ? `$${formatNumberWithCommas(team.max_budget_in_team, 4)}` 
                       : "No limit"}
                   </p>
                 </div>

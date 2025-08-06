@@ -85,9 +85,9 @@ class CustomStreamWrapper:
 
         self.system_fingerprint: Optional[str] = None
         self.received_finish_reason: Optional[str] = None
-        self.intermittent_finish_reason: Optional[
-            str
-        ] = None  # finish reasons that show up mid-stream
+        self.intermittent_finish_reason: Optional[str] = (
+            None  # finish reasons that show up mid-stream
+        )
         self.special_tokens = [
             "<|assistant|>",
             "<|system|>",
@@ -620,7 +620,6 @@ class CustomStreamWrapper:
 
         args = {
             "model": _model,
-            "stream_options": self.stream_options,
             **chunk_dict,
         }
 
@@ -643,6 +642,7 @@ class CustomStreamWrapper:
         model_response._hidden_params = {
             **model_response._hidden_params,
             **self._hidden_params,
+            "response_cost": None,
         }
 
         if (
@@ -745,18 +745,41 @@ class CustomStreamWrapper:
         else:
             return False
 
+    def strip_role_from_delta(
+        self, model_response: ModelResponseStream
+    ) -> ModelResponseStream:
+        """
+        Strip the role from the delta.
+        """
+        if self.sent_first_chunk is False:
+            model_response.choices[0].delta["role"] = "assistant"
+            self.sent_first_chunk = True
+        elif self.sent_first_chunk is True and hasattr(
+            model_response.choices[0].delta, "role"
+        ):
+            _initial_delta = model_response.choices[0].delta.model_dump()
+
+            _initial_delta.pop("role", None)
+            model_response.choices[0].delta = Delta(**_initial_delta)
+        return model_response
+
     def return_processed_chunk_logic(  # noqa
         self,
         completion_obj: Dict[str, Any],
         model_response: ModelResponseStream,
         response_obj: Dict[str, Any],
     ):
+        from litellm.litellm_core_utils.core_helpers import (
+            preserve_upstream_non_openai_attributes,
+        )
+
         print_verbose(
             f"completion_obj: {completion_obj}, model_response.choices[0]: {model_response.choices[0]}, response_obj: {response_obj}"
         )
         is_chunk_non_empty = self.is_chunk_non_empty(
             completion_obj, model_response, response_obj
         )
+
         if (
             is_chunk_non_empty
         ):  # cannot set content of an OpenAI Object to be an empty string
@@ -765,11 +788,12 @@ class CustomStreamWrapper:
                 chunk=completion_obj["content"],
                 finish_reason=model_response.choices[0].finish_reason,
             )  # filter out bos/eos tokens from openai-compatible hf endpoints
-            print_verbose(f"hold - {hold}, model_response_str - {model_response_str}")
+
             if hold is False:
                 ## check if openai/azure chunk
                 original_chunk = response_obj.get("original_chunk", None)
                 if original_chunk:
+
                     if len(original_chunk.choices) > 0:
                         choices = []
                         for choice in original_chunk.choices:
@@ -786,6 +810,7 @@ class CustomStreamWrapper:
                         print_verbose(f"choices in streaming: {choices}")
                         setattr(model_response, "choices", choices)
                     else:
+
                         return
                     model_response.system_fingerprint = (
                         original_chunk.system_fingerprint
@@ -795,19 +820,14 @@ class CustomStreamWrapper:
                         "citations",
                         getattr(original_chunk, "citations", None),
                     )
-                    print_verbose(f"self.sent_first_chunk: {self.sent_first_chunk}")
-                    if self.sent_first_chunk is False:
-                        model_response.choices[0].delta["role"] = "assistant"
-                        self.sent_first_chunk = True
-                    elif self.sent_first_chunk is True and hasattr(
-                        model_response.choices[0].delta, "role"
-                    ):
-                        _initial_delta = model_response.choices[0].delta.model_dump()
+                    preserve_upstream_non_openai_attributes(
+                        model_response=model_response,
+                        original_chunk=original_chunk,
+                    )
 
-                        _initial_delta.pop("role", None)
-                        model_response.choices[0].delta = Delta(**_initial_delta)
+                    model_response = self.strip_role_from_delta(model_response)
                     verbose_logger.debug(
-                        f"model_response.choices[0].delta: {model_response.choices[0].delta}"
+                        f"model_response.choices[0].delta inside is_chunk_non_empty: {model_response.choices[0].delta}"
                     )
                 else:
                     ## else
@@ -827,7 +847,7 @@ class CustomStreamWrapper:
                 self._optional_combine_thinking_block_in_choices(
                     model_response=model_response
                 )
-                print_verbose(f"returning model_response: {model_response}")
+
                 return model_response
             else:
                 return
@@ -869,15 +889,15 @@ class CustomStreamWrapper:
             model_response.choices[0].delta.tool_calls is not None
             or model_response.choices[0].delta.function_call is not None
         ):
-            if self.sent_first_chunk is False:
-                model_response.choices[0].delta["role"] = "assistant"
-                self.sent_first_chunk = True
+            model_response = self.strip_role_from_delta(model_response)
+
             return model_response
         elif (
             len(model_response.choices) > 0
             and hasattr(model_response.choices[0].delta, "audio")
             and model_response.choices[0].delta.audio is not None
         ):
+            model_response = self.strip_role_from_delta(model_response)
             return model_response
         else:
             if hasattr(model_response, "usage"):
@@ -902,6 +922,9 @@ class CustomStreamWrapper:
             )
             if reasoning_content:
                 if self.sent_first_thinking_block is False:
+                    # Ensure content is not None before concatenation
+                    if model_response.choices[0].delta.content is None:
+                        model_response.choices[0].delta.content = ""
                     model_response.choices[0].delta.content += (
                         "<think>" + reasoning_content
                     )
@@ -917,8 +940,8 @@ class CustomStreamWrapper:
                 and not self.sent_last_thinking_block
                 and model_response.choices[0].delta.content
             ):
-                model_response.choices[0].delta.content = (
-                    "</think>" + model_response.choices[0].delta.content
+                model_response.choices[0].delta.content = "</think>" + (
+                    model_response.choices[0].delta.content or ""
                 )
                 self.sent_last_thinking_block = True
 
@@ -1202,6 +1225,9 @@ class CustomStreamWrapper:
                 if response_obj is None:
                     return
                 completion_obj["content"] = response_obj["text"]
+                self.intermittent_finish_reason = response_obj.get(
+                    "finish_reason", None
+                )
                 if response_obj["is_finished"]:
                     if response_obj["finish_reason"] == "error":
                         raise Exception(
@@ -1322,9 +1348,9 @@ class CustomStreamWrapper:
                             _json_delta = delta.model_dump()
                             print_verbose(f"_json_delta: {_json_delta}")
                             if "role" not in _json_delta or _json_delta["role"] is None:
-                                _json_delta[
-                                    "role"
-                                ] = "assistant"  # mistral's api returns role as None
+                                _json_delta["role"] = (
+                                    "assistant"  # mistral's api returns role as None
+                                )
                             if "tool_calls" in _json_delta and isinstance(
                                 _json_delta["tool_calls"], list
                             ):
@@ -1558,8 +1584,11 @@ class CustomStreamWrapper:
         except StopIteration:
             if self.sent_last_chunk is True:
                 complete_streaming_response = litellm.stream_chunk_builder(
-                    chunks=self.chunks, messages=self.messages
+                    chunks=self.chunks,
+                    messages=self.messages,
+                    logging_obj=self.logging_obj,
                 )
+
                 response = self.model_response_creator()
                 if complete_streaming_response is not None:
                     setattr(
@@ -1715,9 +1744,9 @@ class CustomStreamWrapper:
                         chunk = next(self.completion_stream)
                     if chunk is not None and chunk != b"":
                         print_verbose(f"PROCESSED CHUNK PRE CHUNK CREATOR: {chunk}")
-                        processed_chunk: Optional[
-                            ModelResponseStream
-                        ] = self.chunk_creator(chunk=chunk)
+                        processed_chunk: Optional[ModelResponseStream] = (
+                            self.chunk_creator(chunk=chunk)
+                        )
                         print_verbose(
                             f"PROCESSED CHUNK POST CHUNK CREATOR: {processed_chunk}"
                         )
@@ -1741,7 +1770,9 @@ class CustomStreamWrapper:
             if self.sent_last_chunk is True:
                 # log the final chunk with accurate streaming values
                 complete_streaming_response = litellm.stream_chunk_builder(
-                    chunks=self.chunks, messages=self.messages
+                    chunks=self.chunks,
+                    messages=self.messages,
+                    logging_obj=self.logging_obj,
                 )
                 response = self.model_response_creator()
                 if complete_streaming_response is not None:
@@ -1814,13 +1845,25 @@ class CustomStreamWrapper:
                     self.logging_obj.async_failure_handler(e, traceback_exception)  # type: ignore
                 )
             ## Map to OpenAI Exception
-            raise exception_type(
-                model=self.model,
-                custom_llm_provider=self.custom_llm_provider,
-                original_exception=e,
-                completion_kwargs={},
-                extra_kwargs={},
-            )
+            try:
+                exception_type(
+                    model=self.model,
+                    custom_llm_provider=self.custom_llm_provider,
+                    original_exception=e,
+                    completion_kwargs={},
+                    extra_kwargs={},
+                )
+            except Exception as e:
+                from litellm.exceptions import MidStreamFallbackError
+
+                raise MidStreamFallbackError(
+                    message=str(e),
+                    model=self.model,
+                    llm_provider=self.custom_llm_provider or "anthropic",
+                    original_exception=e,
+                    generated_content=self.response_uptil_now,
+                    is_pre_first_chunk=not self.sent_first_chunk,
+                )
 
     @staticmethod
     def _strip_sse_data_from_chunk(chunk: Optional[str]) -> Optional[str]:
@@ -1890,3 +1933,29 @@ def generic_chunk_has_all_required_fields(chunk: dict) -> bool:
 
     decision = all(key in _all_fields for key in chunk)
     return decision
+
+
+def convert_generic_chunk_to_model_response_stream(
+    chunk: GChunk,
+) -> ModelResponseStream:
+    from litellm.types.utils import Delta
+
+    model_response_stream = ModelResponseStream(
+        id=str(uuid.uuid4()),
+        model="",
+        choices=[
+            StreamingChoices(
+                index=chunk.get("index", 0),
+                delta=Delta(
+                    content=chunk["text"],
+                    tool_calls=chunk.get("tool_use", None),
+                ),
+            )
+        ],
+        finish_reason=chunk["finish_reason"] if chunk["is_finished"] else None,
+    )
+
+    if "usage" in chunk and chunk["usage"] is not None:
+        setattr(model_response_stream, "usage", chunk["usage"])
+
+    return model_response_stream

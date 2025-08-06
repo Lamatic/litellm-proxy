@@ -3,17 +3,20 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from litellm.proxy._types import NewUserRequest, ProxyException
+from litellm.proxy._types import LitellmUserRoles, NewUserRequest, ProxyException
 from litellm.proxy.management_endpoints.scim.scim_v2 import (
     UserProvisionerHelpers,
     _handle_team_membership_changes,
     create_user,
+    get_service_provider_config,
     patch_user,
     update_user,
 )
 from litellm.types.proxy.management_endpoints.scim_v2 import (
+    SCIMFeature,
     SCIMPatchOp,
     SCIMPatchOperation,
+    SCIMServiceProviderConfig,
     SCIMUser,
     SCIMUserEmail,
     SCIMUserGroup,
@@ -56,6 +59,94 @@ async def test_create_user_existing_user_conflict(mocker):
     assert exc_info.value.status_code == 409
     assert "existing-user" in str(exc_info.value.detail)
     mocked_new_user.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_user_defaults_to_viewer(mocker, monkeypatch):
+    """If no role provided, new user should default to viewer"""
+
+    scim_user = SCIMUser(
+        schemas=["urn:ietf:params:scim:schemas:core:2.0:User"],
+        userName="new-user",
+        name=SCIMUserName(familyName="User", givenName="New"),
+        emails=[SCIMUserEmail(value="new@example.com")],
+    )
+
+    mock_prisma_client = mocker.MagicMock()
+    mock_prisma_client.db = mocker.MagicMock()
+    mock_prisma_client.db.litellm_usertable = mocker.MagicMock()
+    mock_prisma_client.db.litellm_usertable.find_unique = AsyncMock(return_value=None)
+    mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(
+        "litellm.default_internal_user_params", None, raising=False
+    )
+
+    mocker.patch(
+        "litellm.proxy.management_endpoints.scim.scim_v2._get_prisma_client_or_raise_exception",
+        AsyncMock(return_value=mock_prisma_client),
+    )
+
+    new_user_mock = mocker.patch(
+        "litellm.proxy.management_endpoints.scim.scim_v2.new_user",
+        AsyncMock(return_value=NewUserRequest(user_id="new-user")),
+    )
+
+    mocker.patch(
+        "litellm.proxy.management_endpoints.scim.scim_v2.ScimTransformations.transform_litellm_user_to_scim_user",
+        AsyncMock(return_value=scim_user),
+    )
+
+    await create_user(user=scim_user)
+
+    called_args = new_user_mock.call_args.kwargs["data"]
+    assert called_args.user_role == LitellmUserRoles.INTERNAL_USER_VIEW_ONLY
+
+
+@pytest.mark.asyncio
+async def test_create_user_uses_default_internal_user_params_role(mocker, monkeypatch):
+    """If role is set in default_internal_user_params, new user should use that role"""
+
+    scim_user = SCIMUser(
+        schemas=["urn:ietf:params:scim:schemas:core:2.0:User"],
+        userName="new-user",
+        name=SCIMUserName(familyName="User", givenName="New"),
+        emails=[SCIMUserEmail(value="new@example.com")],
+    )
+
+    mock_prisma_client = mocker.MagicMock()
+    mock_prisma_client.db = mocker.MagicMock()
+    mock_prisma_client.db.litellm_usertable = mocker.MagicMock()
+    mock_prisma_client.db.litellm_usertable.find_unique = AsyncMock(return_value=None)
+    mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
+
+    # Set default_internal_user_params with a specific role
+    default_params = {
+        "user_role": LitellmUserRoles.PROXY_ADMIN,
+    }
+    monkeypatch.setattr(
+        "litellm.default_internal_user_params", default_params, raising=False
+    )
+
+    mocker.patch(
+        "litellm.proxy.management_endpoints.scim.scim_v2._get_prisma_client_or_raise_exception",
+        AsyncMock(return_value=mock_prisma_client),
+    )
+
+    new_user_mock = mocker.patch(
+        "litellm.proxy.management_endpoints.scim.scim_v2.new_user",
+        AsyncMock(return_value=NewUserRequest(user_id="new-user")),
+    )
+
+    mocker.patch(
+        "litellm.proxy.management_endpoints.scim.scim_v2.ScimTransformations.transform_litellm_user_to_scim_user",
+        AsyncMock(return_value=scim_user),
+    )
+
+    await create_user(user=scim_user)
+
+    called_args = new_user_mock.call_args.kwargs["data"]
+    assert called_args.user_role == LitellmUserRoles.PROXY_ADMIN
 
 
 @pytest.mark.asyncio
@@ -469,3 +560,22 @@ async def test_patch_user_not_found(mocker):
     # Should raise ProxyException (which wraps the HTTPException)
     with pytest.raises(ProxyException):
         await patch_user(user_id="nonexistent-user", patch_ops=patch_ops)
+
+
+@pytest.mark.asyncio
+async def test_get_service_provider_config(mocker):
+    """Test the get_service_provider_config endpoint"""
+    # Mock the Request object
+    mock_request = mocker.MagicMock()
+    mock_request.url = "https://example.com/scim/v2/ServiceProviderConfig"
+    
+    # Call the endpoint
+    result = await get_service_provider_config(mock_request)
+    
+    # Verify it returns the correct response
+    assert isinstance(result, SCIMServiceProviderConfig)
+    assert result.schemas == ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"]
+    assert result.patch.supported is True
+    assert result.bulk.supported is False
+    assert result.meta is not None
+    assert result.meta["resourceType"] == "ServiceProviderConfig"

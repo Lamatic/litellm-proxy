@@ -4,6 +4,9 @@ import httpx
 
 import litellm
 from litellm._logging import verbose_logger
+from litellm.litellm_core_utils.llm_response_utils.convert_dict_to_response import (
+    _safe_convert_created_field,
+)
 from litellm.llms.base_llm.responses.transformation import BaseResponsesAPIConfig
 from litellm.secret_managers.main import get_secret_str
 from litellm.types.llms.openai import *
@@ -46,6 +49,8 @@ class OpenAIResponsesAPIConfig(BaseResponsesAPIConfig):
             "top_p",
             "truncation",
             "user",
+            "service_tier",
+            "safety_identifier",
             "extra_headers",
             "extra_query",
             "extra_body",
@@ -85,6 +90,7 @@ class OpenAIResponsesAPIConfig(BaseResponsesAPIConfig):
         """No transform applied since outputs are in OpenAI spec already"""
         try:
             raw_response_json = raw_response.json()
+            raw_response_json["created_at"] = _safe_convert_created_field(raw_response_json["created_at"])
         except Exception:
             raise OpenAIError(
                 message=raw_response.text, status_code=raw_response.status_code
@@ -92,13 +98,11 @@ class OpenAIResponsesAPIConfig(BaseResponsesAPIConfig):
         return ResponsesAPIResponse(**raw_response_json)
 
     def validate_environment(
-        self,
-        headers: dict,
-        model: str,
-        api_key: Optional[str] = None,
+        self, headers: dict, model: str, litellm_params: Optional[GenericLiteLLMParams]
     ) -> dict:
+        litellm_params = litellm_params or GenericLiteLLMParams()
         api_key = (
-            api_key
+            litellm_params.api_key
             or litellm.api_key
             or litellm.openai_key
             or get_secret_str("OPENAI_API_KEY")

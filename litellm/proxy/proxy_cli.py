@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 import click
 import httpx
 from dotenv import load_dotenv
-import urllib.parse
+
 if TYPE_CHECKING:
     from fastapi import FastAPI
 else:
@@ -147,6 +147,7 @@ class ProxyInitializationHelpers:
         port: int,
         ssl_certfile_path: str,
         ssl_keyfile_path: str,
+        ciphers: Optional[str] = None,
     ):
         """
         Initialize litellm with `hypercorn`
@@ -168,6 +169,8 @@ class ProxyInitializationHelpers:
             )
             config.certfile = ssl_certfile_path
             config.keyfile = ssl_keyfile_path
+            if ciphers is not None:
+                config.ciphers = ciphers
 
         # hypercorn serve raises a type warning when passing a fast api app - even though fast API is a valid type
         asyncio.run(serve(app, config))  # type: ignore
@@ -456,9 +459,15 @@ class ProxyInitializationHelpers:
     envvar="SSL_CERTFILE_PATH",
 )
 @click.option(
+    "--ciphers",
+    default=None,
+    type=str,
+    help="Ciphers to use for the SSL setup.",
+)
+@click.option(
     "--use_prisma_migrate",
     is_flag=True,
-    default=False,
+    default=True,
     help="Use prisma migrate instead of prisma db push for database schema updates",
 )
 @click.option("--local", is_flag=True, default=False, help="for local debugging")
@@ -508,6 +517,7 @@ def run_server(  # noqa: PLR0915
     run_hypercorn,
     ssl_keyfile_path,
     ssl_certfile_path,
+    ciphers,
     log_config,
     use_prisma_migrate,
     skip_server_startup,
@@ -528,6 +538,10 @@ def run_server(  # noqa: PLR0915
                 ProxyConfig,
                 app,
                 save_worker_config,
+            )
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError(
+                f"Missing dependency {e}. Run `pip install 'litellm[proxy]'`"
             )
         except ImportError as e:
             if "litellm[proxy]" in str(e):
@@ -671,26 +685,11 @@ def run_server(  # noqa: PLR0915
                 )
             database_url = general_settings.get("database_url", None)
             if database_url is None and os.getenv("DATABASE_URL") is None:
-                # Check if all required variables are provided
-                database_host = os.getenv("DATABASE_HOST")
-                database_username = os.getenv("DATABASE_USERNAME")
-                database_password = os.getenv("DATABASE_PASSWORD")
-                database_name = os.getenv("DATABASE_NAME")
+                # Use helper function to construct DATABASE_URL from individual variables
+                from litellm.proxy.utils import construct_database_url_from_env_vars
 
-                if (
-                    database_host
-                    and database_username
-                    and database_password
-                    and database_name
-                ):
-                    # Handle the problem of special character escaping in the database URL
-                    database_username_enc = urllib.parse.quote_plus(database_username)
-                    database_password_enc = urllib.parse.quote_plus(database_password)
-                    database_name_enc = urllib.parse.quote_plus(database_name)
-
-                    # Construct DATABASE_URL from the provided variables
-                    database_url = f"postgresql://{database_username_enc}:{database_password_enc}@{database_host}/{database_name_enc}"
-
+                database_url = construct_database_url_from_env_vars()
+                if database_url:
                     os.environ["DATABASE_URL"] = database_url
             db_connection_pool_limit = general_settings.get(
                 "database_connection_pool_limit",
@@ -713,6 +712,24 @@ def run_server(  # noqa: PLR0915
                 os.chdir(original_dir)
             if database_url is not None and isinstance(database_url, str):
                 os.environ["DATABASE_URL"] = database_url
+
+        # Handle database URL construction when no config file is used
+        if config is None and os.getenv("DATABASE_URL") is None:
+            # Use helper function to construct DATABASE_URL from individual variables
+            from litellm.proxy.utils import construct_database_url_from_env_vars
+
+            database_url = construct_database_url_from_env_vars()
+            if database_url:
+                os.environ["DATABASE_URL"] = database_url
+
+        # Set default values for connection pool settings when no config is used
+        if config is None:
+            db_connection_pool_limit = (
+                LiteLLMDatabaseConnectionPool.database_connection_pool_limit.value
+            )
+            db_connection_timeout = (
+                LiteLLMDatabaseConnectionPool.database_connection_pool_timeout.value
+            )
 
         if (
             os.getenv("DATABASE_URL", None) is not None
@@ -776,9 +793,16 @@ def run_server(  # noqa: PLR0915
         # DO NOT DELETE - enables global variables to work across files
         from litellm.proxy.proxy_server import app  # noqa
 
+        # --- SEPARATE HEALTH APP LOGIC ---
+        # To run the health app separately, use:
+        #   uvicorn litellm.proxy.health_app_factory:build_health_app --factory --host 0.0.0.0 --port=4001
+        # This is compatible with the SEPARATE_HEALTH_APP Docker/supervisord pattern.
+        # --- END SEPARATE HEALTH APP LOGIC ---
         # Skip server startup if requested (after all setup is done)
         if skip_server_startup:
-            print("LiteLLM: Setup complete. Skipping server startup as requested.")  # noqa
+            print(  # noqa
+                "LiteLLM: Setup complete. Skipping server startup as requested."
+            )
             return
 
         uvicorn_args = ProxyInitializationHelpers._get_default_unvicorn_init_args(
@@ -819,6 +843,7 @@ def run_server(  # noqa: PLR0915
                 port=port,
                 ssl_certfile_path=ssl_certfile_path,
                 ssl_keyfile_path=ssl_keyfile_path,
+                ciphers=ciphers,
             )
 
 
