@@ -6,9 +6,12 @@ import { createMCPServer } from "../networking"
 import { MCPServer, MCPServerCostInfo } from "./types"
 import MCPServerCostConfig from "./mcp_server_cost_config"
 import MCPConnectionStatus from "./mcp_connection_status"
+import MCPToolConfiguration from "./mcp_tool_configuration"
 import StdioConfiguration from "./StdioConfiguration"
+import MCPPermissionManagement from "./MCPPermissionManagement"
 import { isAdminRole } from "@/utils/roles"
 import { validateMCPServerUrl, validateMCPServerName } from "./utils"
+import NotificationsManager from "../molecules/notifications_manager"
 
 const asset_logos_folder = "../ui/assets/logos/"
 export const mcpLogoImg = `${asset_logos_folder}mcp_logo.png`
@@ -36,8 +39,26 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
   const [formValues, setFormValues] = useState<Record<string, any>>({})
   const [aliasManuallyEdited, setAliasManuallyEdited] = useState(false)
   const [tools, setTools] = useState<any[]>([])
-  const [transportType, setTransportType] = useState<string>("sse")
+  const [allowedTools, setAllowedTools] = useState<string[]>([])
+  const [transportType, setTransportType] = useState<string>("")
   const [searchValue, setSearchValue] = useState<string>("")
+  const [urlWarning, setUrlWarning] = useState<string>("")
+
+  // Function to check URL format based on transport type
+  const checkUrlFormat = (url: string, transport: string) => {
+    if (!url) {
+      setUrlWarning("")
+      return
+    }
+
+    if (transport === "sse" && !url.endsWith("/sse")) {
+      setUrlWarning("Typically MCP SSE URLs end with /sse. You can add this url but this is a warning.")
+    } else if (transport === "http" && !url.endsWith("/mcp")) {
+      setUrlWarning("Typically MCP HTTP URLs end with /mcp. You can add this url but this is a warning.")
+    } else {
+      setUrlWarning("")
+    }
+  }
 
   const handleCreate = async (formValues: Record<string, any>) => {
     setIsLoading(true)
@@ -80,12 +101,12 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
 
           console.log("Parsed stdio config:", stdioFields)
         } catch (error) {
-          message.error("Invalid JSON in stdio configuration")
+          NotificationsManager.fromBackend("Invalid JSON in stdio configuration")
           return
         }
       }
 
-      // Prepare the payload with cost configuration
+      // Prepare the payload with cost configuration and allowed tools
       const payload = {
         ...formValues,
         ...stdioFields,
@@ -98,6 +119,7 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
         },
         mcp_access_groups: accessGroups,
         alias: formValues.alias,
+        allowed_tools: allowedTools.length > 0 ? allowedTools : null,
       }
 
       console.log(`Payload: ${JSON.stringify(payload)}`)
@@ -105,15 +127,18 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
       if (accessToken != null) {
         const response = await createMCPServer(accessToken, payload)
 
-        message.success("MCP Server created successfully")
+        NotificationsManager.success("MCP Server created successfully")
         form.resetFields()
         setCostConfig({})
         setTools([])
+        setAllowedTools([])
+        setUrlWarning("")
+        setAliasManuallyEdited(false)
         setModalVisible(false)
         onCreateSuccess(response)
       }
     } catch (error) {
-      message.error("Error creating MCP Server: " + error, 20)
+      NotificationsManager.fromBackend("Error creating MCP Server: " + error)
     } finally {
       setIsLoading(false)
     }
@@ -124,6 +149,9 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
     form.resetFields()
     setCostConfig({})
     setTools([])
+    setAllowedTools([])
+    setUrlWarning("")
+    setAliasManuallyEdited(false)
     setModalVisible(false)
   }
 
@@ -132,8 +160,14 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
     // Clear fields that are not relevant for the selected transport
     if (value === "stdio") {
       form.setFieldsValue({ url: undefined, auth_type: undefined })
+      setUrlWarning("")
     } else {
       form.setFieldsValue({ command: undefined, args: undefined, env: undefined })
+      // Check URL format for the new transport type
+      const currentUrl = form.getFieldValue("url")
+      if (currentUrl) {
+        checkUrlFormat(currentUrl, value)
+      }
     }
   }
 
@@ -150,7 +184,10 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
     }))
 
     // If search value doesn't match any existing group and is not empty, add "create new group" option
-    if (searchValue && !availableAccessGroups.some(group => group.toLowerCase().includes(searchValue.toLowerCase()))) {
+    if (
+      searchValue &&
+      !availableAccessGroups.some((group) => group.toLowerCase().includes(searchValue.toLowerCase()))
+    ) {
       existingOptions.push({
         value: searchValue,
         label: (
@@ -174,6 +211,13 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
       setFormValues((prev) => ({ ...prev, alias: normalized }))
     }
   }, [formValues.server_name])
+
+  // Clear formValues when modal closes to reset child components
+  React.useEffect(() => {
+    if (!isModalVisible) {
+      setFormValues({})
+    }
+  }, [isModalVisible])
 
   // rendering
   if (!isAdminRole(userRole)) {
@@ -271,7 +315,7 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
               rules={[
                 {
                   required: false,
-                  message: "Please enter a server description",
+                  message: "Please enter a server description!!!!!!!!!",
                 },
               ]}
             >
@@ -309,10 +353,14 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
                   { validator: (_, value) => validateMCPServerUrl(value) },
                 ]}
               >
-                <TextInput
-                  placeholder="https://your-mcp-server.com"
-                  className="rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-                />
+                <div>
+                  <TextInput
+                    placeholder="https://your-mcp-server.com"
+                    className="rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                    onChange={(e) => checkUrlFormat(e.target.value, transportType)}
+                  />
+                  {urlWarning && <div className="mt-1 text-red-500 text-sm font-medium">{urlWarning}</div>}
+                </div>
               </Form.Item>
             )}
 
@@ -334,53 +382,17 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
 
             {/* Stdio Configuration - only show for stdio transport */}
             <StdioConfiguration isVisible={transportType === "stdio"} />
+          </div>
 
-            <Form.Item
-              label={
-                <span className="text-sm font-medium text-gray-700 flex items-center">
-                  MCP Version
-                  <Tooltip title="Select the MCP specification version your server supports">
-                    <InfoCircleOutlined className="ml-2 text-gray-400 hover:text-gray-600" />
-                  </Tooltip>
-                </span>
-              }
-              name="spec_version"
-              rules={[{ required: true, message: "Please select a spec version" }]}
-            >
-              <Select placeholder="Select MCP version" className="rounded-lg" size="large">
-                <Select.Option value="2025-06-18">2025-06-18 (Latest)</Select.Option>
-                <Select.Option value="2025-03-26">2025-03-26</Select.Option>
-                <Select.Option value="2024-11-05">2024-11-05</Select.Option>
-              </Select>
-            </Form.Item>
-
-            <Form.Item
-              label={
-                <span className="text-sm font-medium text-gray-700 flex items-center">
-                  MCP Access Groups
-                  <Tooltip title="Specify access groups for this MCP server. Users must be in at least one of these groups to access the server.">
-                    <InfoCircleOutlined className="ml-2 text-blue-400 hover:text-blue-600 cursor-help" />
-                  </Tooltip>
-                </span>
-              }
-              name="mcp_access_groups"
-              className="mb-4"
-            >
-              <Select
-                mode="tags"
-                showSearch
-                placeholder="Select existing groups or type to create new ones"
-                optionFilterProp="value"
-                filterOption={(input, option) =>
-                  (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
-                }
-                onSearch={(value) => setSearchValue(value)}
-                tokenSeparators={[","]}
-                options={getAccessGroupOptions()}
-                maxTagCount="responsive"
-                allowClear
-              />
-            </Form.Item>
+          {/* Permission Management / Access Control Section */}
+          <div className="mt-8">
+            <MCPPermissionManagement
+              availableAccessGroups={availableAccessGroups}
+              mcpServer={null}
+              searchValue={searchValue}
+              setSearchValue={setSearchValue}
+              getAccessGroupOptions={getAccessGroupOptions}
+            />
           </div>
 
           {/* Connection Status Section */}
@@ -388,9 +400,25 @@ const CreateMCPServer: React.FC<CreateMCPServerProps> = ({
             <MCPConnectionStatus accessToken={accessToken} formValues={formValues} onToolsLoaded={setTools} />
           </div>
 
+          {/* Tool Configuration Section */}
+          <div className="mt-6">
+            <MCPToolConfiguration
+              accessToken={accessToken}
+              formValues={formValues}
+              allowedTools={allowedTools}
+              existingAllowedTools={null}
+              onAllowedToolsChange={setAllowedTools}
+            />
+          </div>
+
           {/* Cost Configuration Section */}
           <div className="mt-6">
-            <MCPServerCostConfig value={costConfig} onChange={setCostConfig} tools={tools} disabled={false} />
+            <MCPServerCostConfig
+              value={costConfig}
+              onChange={setCostConfig}
+              tools={tools.filter((tool) => allowedTools.includes(tool.name))}
+              disabled={false}
+            />
           </div>
 
           <div className="flex items-center justify-end space-x-3 pt-6 border-t border-gray-100">
