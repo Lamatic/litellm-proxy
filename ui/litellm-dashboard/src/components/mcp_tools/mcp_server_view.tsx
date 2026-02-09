@@ -1,26 +1,26 @@
-import React, { useState } from "react"
-import { ArrowLeftIcon, EyeIcon, EyeOffIcon } from "@heroicons/react/outline"
-import { Title, Card, Button, Text, Grid, TabGroup, TabList, TabPanel, TabPanels, Tab, Icon } from "@tremor/react"
+import React, { useState } from "react";
+import { ArrowLeftIcon, EyeIcon, EyeOffIcon } from "@heroicons/react/outline";
+import { Title, Card, Button, Text, Grid, TabGroup, TabList, TabPanel, TabPanels, Tab, Icon } from "@tremor/react";
 
-import { MCPServer, handleTransport, handleAuth } from "./types"
+import { MCPServer, handleTransport, handleAuth } from "./types";
 // TODO: Move Tools viewer from index file
-import { MCPToolsViewer } from "."
-import MCPServerEdit from "./mcp_server_edit"
-import MCPServerCostDisplay from "./mcp_server_cost_display"
-import { getMaskedAndFullUrl } from "./utils"
-import { copyToClipboard as utilCopyToClipboard } from "@/utils/dataUtils"
-import { CheckIcon, CopyIcon } from "lucide-react"
-import { Button as AntdButton } from "antd"
+import { MCPToolsViewer } from ".";
+import MCPServerEdit from "./mcp_server_edit";
+import MCPServerCostDisplay from "./mcp_server_cost_display";
+import { getMaskedAndFullUrl } from "./utils";
+import { copyToClipboard as utilCopyToClipboard } from "@/utils/dataUtils";
+import { CheckIcon, CopyIcon } from "lucide-react";
+import { Button as AntdButton } from "antd";
 
 interface MCPServerViewProps {
-  mcpServer: MCPServer
-  onBack: () => void
-  isProxyAdmin: boolean
-  isEditing: boolean
-  accessToken: string | null
-  userRole: string | null
-  userID: string | null
-  availableAccessGroups: string[]
+  mcpServer: MCPServer;
+  onBack: () => void;
+  isProxyAdmin: boolean;
+  isEditing: boolean;
+  accessToken: string | null;
+  userRole: string | null;
+  userID: string | null;
+  availableAccessGroups: string[];
 }
 
 export const MCPServerView: React.FC<MCPServerViewProps> = ({
@@ -33,30 +33,32 @@ export const MCPServerView: React.FC<MCPServerViewProps> = ({
   userID,
   availableAccessGroups,
 }) => {
-  const [editing, setEditing] = useState(isEditing)
-  const [showFullUrl, setShowFullUrl] = useState(false)
-  const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({})
-  const handleSuccess = (updated: MCPServer) => {
-    setEditing(false)
-    onBack()
-  }
+  const [editing, setEditing] = useState(isEditing);
+  const [showFullUrl, setShowFullUrl] = useState(false);
+  const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
+  const [selectedTabIndex, setSelectedTabIndex] = useState(0);
 
-  const { maskedUrl, hasToken } = getMaskedAndFullUrl(mcpServer.url)
+  const handleSuccess = (updated: MCPServer) => {
+    setEditing(false);
+    onBack();
+  };
+
+  const { maskedUrl, hasToken } = getMaskedAndFullUrl(mcpServer.url);
 
   const renderUrlWithToggle = (url: string, showFull: boolean) => {
-    if (!hasToken) return url
-    return showFull ? url : maskedUrl
-  }
+    if (!hasToken) return url;
+    return showFull ? url : maskedUrl;
+  };
 
   const copyToClipboard = async (text: string | null | undefined, key: string) => {
-    const success = await utilCopyToClipboard(text)
+    const success = await utilCopyToClipboard(text);
     if (success) {
-      setCopiedStates((prev) => ({ ...prev, [key]: true }))
+      setCopiedStates((prev) => ({ ...prev, [key]: true }));
       setTimeout(() => {
-        setCopiedStates((prev) => ({ ...prev, [key]: false }))
-      }, 2000)
+        setCopiedStates((prev) => ({ ...prev, [key]: false }));
+      }, 2000);
     }
-  }
+  };
 
   return (
     <div className="p-4 max-w-full">
@@ -72,11 +74,10 @@ export const MCPServerView: React.FC<MCPServerViewProps> = ({
               size="small"
               icon={copiedStates["mcp-server_name"] ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
               onClick={() => copyToClipboard(mcpServer.server_name, "mcp-server_name")}
-              className={`left-2 z-10 transition-all duration-200 ${
-                copiedStates["mcp-server_name"]
-                  ? "text-green-600 bg-green-50 border-green-200"
-                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-              }`}
+              className={`left-2 z-10 transition-all duration-200 ${copiedStates["mcp-server_name"]
+                ? "text-green-600 bg-green-50 border-green-200"
+                : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                }`}
             />
             {mcpServer.alias && (
               <>
@@ -87,11 +88,10 @@ export const MCPServerView: React.FC<MCPServerViewProps> = ({
                   size="small"
                   icon={copiedStates["mcp-alias"] ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
                   onClick={() => copyToClipboard(mcpServer.alias, "mcp-alias")}
-                  className={`left-2 z-10 transition-all duration-200 ${
-                    copiedStates["mcp-alias"]
-                      ? "text-green-600 bg-green-50 border-green-200"
-                      : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                  }`}
+                  className={`left-2 z-10 transition-all duration-200 ${copiedStates["mcp-alias"]
+                    ? "text-green-600 bg-green-50 border-green-200"
+                    : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                    }`}
                 />
               </>
             )}
@@ -103,18 +103,17 @@ export const MCPServerView: React.FC<MCPServerViewProps> = ({
               size="small"
               icon={copiedStates["mcp-server-id"] ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
               onClick={() => copyToClipboard(mcpServer.server_id, "mcp-server-id")}
-              className={`left-2 z-10 transition-all duration-200 ${
-                copiedStates["mcp-server-id"]
-                  ? "text-green-600 bg-green-50 border-green-200"
-                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-              }`}
+              className={`left-2 z-10 transition-all duration-200 ${copiedStates["mcp-server-id"]
+                ? "text-green-600 bg-green-50 border-green-200"
+                : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                }`}
             />
           </div>
         </div>
       </div>
 
       {/* TODO: magic number for index */}
-      <TabGroup defaultIndex={editing ? 2 : 0}>
+      <TabGroup index={selectedTabIndex} onIndexChange={setSelectedTabIndex}>
         <TabList className="mb-4">
           {[
             <Tab key="overview">Overview</Tab>,
@@ -230,6 +229,44 @@ export const MCPServerView: React.FC<MCPServerViewProps> = ({
                     <div>{handleAuth(mcpServer.auth_type)}</div>
                   </div>
                   <div>
+                    <Text className="font-medium">Allow All LiteLLM Keys</Text>
+                    <div className="flex items-center gap-2">
+                      {mcpServer.allow_all_keys ? (
+                        <span className="px-2 py-1 bg-green-50 text-green-700 rounded-md text-sm">
+                          Enabled
+                        </span>
+                      ) : (
+                        <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded-md text-sm">
+                          Disabled
+                        </span>
+                      )}
+                      {mcpServer.allow_all_keys && (
+                        <Text className="text-xs text-gray-500">
+                          All keys can access this MCP server
+                        </Text>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <Text className="font-medium">Available on Public Internet</Text>
+                    <div className="flex items-center gap-2">
+                      {mcpServer.available_on_public_internet ? (
+                        <span className="px-2 py-1 bg-green-50 text-green-700 rounded-md text-sm">
+                          Public
+                        </span>
+                      ) : (
+                        <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded-md text-sm">
+                          Internal
+                        </span>
+                      )}
+                      {mcpServer.available_on_public_internet && (
+                        <Text className="text-xs text-gray-500">
+                          Accessible from external/public IPs
+                        </Text>
+                      )}
+                    </div>
+                  </div>
+                  <div>
                     <Text className="font-medium">Access Groups</Text>
                     <div>
                       {mcpServer.mcp_access_groups && mcpServer.mcp_access_groups.length > 0 ? (
@@ -275,5 +312,5 @@ export const MCPServerView: React.FC<MCPServerViewProps> = ({
         </TabPanels>
       </TabGroup>
     </div>
-  )
-}
+  );
+};

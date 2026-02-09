@@ -25,6 +25,7 @@ from litellm.litellm_core_utils.llm_response_utils.convert_dict_to_response impo
     _handle_invalid_parallel_tool_calls,
     _should_convert_tool_call_to_json_mode,
 )
+from litellm.litellm_core_utils.core_helpers import map_finish_reason
 from litellm.litellm_core_utils.prompt_templates.common_utils import get_tool_call_names
 from litellm.litellm_core_utils.prompt_templates.image_handling import (
     async_convert_url_to_base64,
@@ -158,6 +159,7 @@ class OpenAIGPTConfig(BaseLLMModelInfo, BaseConfig):
             "parallel_tool_calls",
             "audio",
             "web_search_options",
+            "service_tier",
             "safety_identifier",
         ]  # works across all models
 
@@ -167,9 +169,11 @@ class OpenAIGPTConfig(BaseLLMModelInfo, BaseConfig):
         ):  # gpt-4 does not support 'response_format'
             model_specific_params.append("response_format")
 
+        # Normalize model name for responses API (e.g., "responses/gpt-4.1" -> "gpt-4.1")
+        model_for_check = model.split("responses/", 1)[1] if "responses/" in model else model
         if (
-            model in litellm.open_ai_chat_completion_models
-        ) or model in litellm.open_ai_text_completion_models:
+            model_for_check in litellm.open_ai_chat_completion_models
+        ) or model_for_check in litellm.open_ai_text_completion_models:
             model_specific_params.append(
                 "user"
             )  # user is not a param supported by all openai-compatible endpoints - e.g. azure ai
@@ -397,13 +401,13 @@ class OpenAIGPTConfig(BaseLLMModelInfo, BaseConfig):
         )
         from litellm.types.llms.openai import ChatCompletionToolParam
 
-        for message in messages:
-            message = cast(
+        for i, message in enumerate(messages):
+            messages[i] = cast(
                 AllMessageValues, filter_value_from_dict(message, "cache_control")  # type: ignore
             )
         if tools is not None:
-            for tool in tools:
-                tool = cast(
+            for i, tool in enumerate(tools):
+                tools[i] = cast(
                     ChatCompletionToolParam,
                     filter_value_from_dict(tool, "cache_control"),  # type: ignore
                 )
@@ -583,8 +587,10 @@ class OpenAIGPTConfig(BaseLLMModelInfo, BaseConfig):
                 enhancements=None,
             )
 
-            translated_choice.finish_reason = self._get_finish_reason(
-                translated_message, choice["finish_reason"]
+            translated_choice.finish_reason = map_finish_reason(
+                self._get_finish_reason(
+                    translated_message, choice["finish_reason"]
+                )
             )
             transformed_choices.append(translated_choice)
 
@@ -768,9 +774,9 @@ class OpenAIChatCompletionStreamingHandler(BaseModelResponseIterator):
             return ModelResponseStream(
                 id=chunk["id"],
                 object="chat.completion.chunk",
-                created=chunk["created"],
-                model=chunk["model"],
-                choices=chunk["choices"],
+                created=chunk.get("created"),
+                model=chunk.get("model"),
+                choices=chunk.get("choices", []),
             )
         except Exception as e:
             raise e

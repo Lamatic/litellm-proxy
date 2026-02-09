@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import urllib.parse
 from datetime import datetime
 from typing import (
     TYPE_CHECKING,
@@ -73,6 +74,21 @@ class BaseAWSLLM:
             "aws_external_id",
         ]
 
+    def _get_ssl_verify(self, ssl_verify: Optional[Union[bool, str]] = None):
+        """
+        Get SSL verification setting for boto3 clients.
+
+        This ensures that custom CA certificates are properly used for all AWS API calls,
+        including STS and Bedrock services.
+
+        Returns:
+            Union[bool, str]: SSL verification setting - False to disable, True to enable,
+                            or a string path to a CA bundle file
+        """
+        from litellm.llms.custom_httpx.http_handler import get_ssl_verify
+
+        return get_ssl_verify(ssl_verify=ssl_verify)
+
     def get_cache_key(self, credential_args: Dict[str, Optional[str]]) -> str:
         """
         Generate a unique cache key based on the credential arguments.
@@ -94,6 +110,7 @@ class BaseAWSLLM:
         aws_web_identity_token: Optional[str] = None,
         aws_sts_endpoint: Optional[str] = None,
         aws_external_id: Optional[str] = None,
+        ssl_verify: Optional[Union[bool, str]] = None,
     ):
         """
         Return a boto3.Credentials object
@@ -162,7 +179,11 @@ class BaseAWSLLM:
         )
 
         # create cache key for non-expiring auth flows
-        args = {k: v for k, v in locals().items() if k.startswith("aws_")}
+        args = {
+            k: v
+            for k, v in locals().items()
+            if k.startswith("aws_") or k == "ssl_verify"
+        }
 
         cache_key = self.get_cache_key(args)
         _cached_credentials = self.iam_cache.get_cache(cache_key)
@@ -226,6 +247,7 @@ class BaseAWSLLM:
                     aws_role_name=aws_role_name,
                     aws_session_name=aws_session_name,
                     aws_external_id=aws_external_id,
+                    ssl_verify=ssl_verify,
                 )
 
         elif aws_profile_name is not None:  ### CHECK SESSION ###
@@ -313,6 +335,12 @@ class BaseAWSLLM:
         if model.startswith("invoke/"):
             model = model.replace("invoke/", "", 1)
 
+        # Special case: Check for "nova" in model name first (before "amazon")
+        # This handles amazon.nova-* models which would otherwise match "amazon" (Titan)
+        if "nova" in model.lower():
+            if "nova" in get_args(BEDROCK_INVOKE_PROVIDERS_LITERAL):
+                return cast(BEDROCK_INVOKE_PROVIDERS_LITERAL, "nova")
+
         _split_model = model.split(".")[0]
         if _split_model in get_args(BEDROCK_INVOKE_PROVIDERS_LITERAL):
             return cast(BEDROCK_INVOKE_PROVIDERS_LITERAL, _split_model)
@@ -322,14 +350,75 @@ class BaseAWSLLM:
         if provider is not None:
             return provider
 
-        # check if provider == "nova"
-        if "nova" in model:
-            return "nova"
-        else:
-            for provider in get_args(BEDROCK_INVOKE_PROVIDERS_LITERAL):
-                if provider in model:
-                    return provider
+        for provider in get_args(BEDROCK_INVOKE_PROVIDERS_LITERAL):
+            if provider in model:
+                return provider
         return None
+
+    @staticmethod
+    def get_bedrock_model_id(
+        optional_params: dict,
+        provider: Optional[BEDROCK_INVOKE_PROVIDERS_LITERAL],
+        model: str,
+    ) -> str:
+        model_id = optional_params.pop("model_id", None)
+        if model_id is not None:
+            model_id = BaseAWSLLM.encode_model_id(model_id=model_id)
+        else:
+            model_id = model
+
+        model_id = model_id.replace("invoke/", "", 1)
+        if provider == "llama" and "llama/" in model_id:
+            model_id = BaseAWSLLM._get_model_id_from_model_with_spec(
+                model_id, spec="llama"
+            )
+        elif provider == "deepseek_r1" and "deepseek_r1/" in model_id:
+            model_id = BaseAWSLLM._get_model_id_from_model_with_spec(
+                model_id, spec="deepseek_r1"
+            )
+        elif provider == "openai" and "openai/" in model_id:
+            model_id = BaseAWSLLM._get_model_id_from_model_with_spec(
+                model_id, spec="openai"
+            )
+        elif provider == "qwen2" and "qwen2/" in model_id:
+            model_id = BaseAWSLLM._get_model_id_from_model_with_spec(
+                model_id, spec="qwen2"
+            )
+        elif provider == "qwen3" and "qwen3/" in model_id:
+            model_id = BaseAWSLLM._get_model_id_from_model_with_spec(
+                model_id, spec="qwen3"
+            )
+        elif provider == "stability" and "stability/" in model_id:
+            model_id = BaseAWSLLM._get_model_id_from_model_with_spec(
+                model_id, spec="stability"
+            )
+        elif provider == "moonshot" and "moonshot/" in model_id:
+            model_id = BaseAWSLLM._get_model_id_from_model_with_spec(
+                model_id, spec="moonshot"
+            )
+        return model_id
+
+    @staticmethod
+    def _get_model_id_from_model_with_spec(
+        model: str,
+        spec: str,
+    ) -> str:
+        """
+        Remove `llama` from modelID since `llama` is simply a spec to follow for custom bedrock models
+        """
+        model_id = model.replace(spec + "/", "")
+        return BaseAWSLLM.encode_model_id(model_id=model_id)
+
+    @staticmethod
+    def encode_model_id(model_id: str) -> str:
+        """
+        Double encode the model ID to ensure it matches the expected double-encoded format.
+        Args:
+            model_id (str): The model ID to encode.
+        Returns:
+            str: The double-encoded model ID.
+        """
+        return urllib.parse.quote(model_id, safe="")
 
     @staticmethod
     def get_bedrock_embedding_provider(
@@ -337,32 +426,43 @@ class BaseAWSLLM:
     ) -> Optional[BEDROCK_EMBEDDING_PROVIDERS_LITERAL]:
         """
         Helper function to get the bedrock embedding provider from the model
-        
+
         Handles scenarios like:
         1. model=cohere.embed-english-v3:0 -> Returns `cohere`
-        2. model=amazon.titan-embed-text-v1 -> Returns `amazon`  
-        3. model=us.twelvelabs.marengo-embed-2-7-v1:0 -> Returns `twelvelabs`
-        4. model=twelvelabs.marengo-embed-2-7-v1:0 -> Returns `twelvelabs`
+        2. model=amazon.titan-embed-text-v1 -> Returns `amazon`
+        3. model=amazon.nova-2-multimodal-embeddings-v1:0 -> Returns `nova`
+        4. model=us.twelvelabs.marengo-embed-2-7-v1:0 -> Returns `twelvelabs`
+        5. model=twelvelabs.marengo-embed-2-7-v1:0 -> Returns `twelvelabs`
         """
+        # Special case: Check for "nova" in model name first (before "amazon")
+        # This handles amazon.nova-* models
+        if "nova" in model.lower():
+            if "nova" in get_args(BEDROCK_EMBEDDING_PROVIDERS_LITERAL):
+                return cast(BEDROCK_EMBEDDING_PROVIDERS_LITERAL, "nova")
+
         # Handle regional models like us.twelvelabs.marengo-embed-2-7-v1:0
         if "." in model:
             parts = model.split(".")
             # Check if the second part (after potential region) is a known provider
             if len(parts) >= 2:
-                potential_provider = parts[1]  # e.g., "twelvelabs" from "us.twelvelabs.marengo-embed-2-7-v1:0"
+                potential_provider = parts[
+                    1
+                ]  # e.g., "twelvelabs" from "us.twelvelabs.marengo-embed-2-7-v1:0"
                 if potential_provider in get_args(BEDROCK_EMBEDDING_PROVIDERS_LITERAL):
                     return cast(BEDROCK_EMBEDDING_PROVIDERS_LITERAL, potential_provider)
-            
+
             # Check if the first part is a known provider (standard format)
-            potential_provider = parts[0]  # e.g., "cohere" from "cohere.embed-english-v3:0"
+            potential_provider = parts[
+                0
+            ]  # e.g., "cohere" from "cohere.embed-english-v3:0"
             if potential_provider in get_args(BEDROCK_EMBEDDING_PROVIDERS_LITERAL):
                 return cast(BEDROCK_EMBEDDING_PROVIDERS_LITERAL, potential_provider)
-        
+
         # Fallback: check if any provider name appears in the model string
         for provider in get_args(BEDROCK_EMBEDDING_PROVIDERS_LITERAL):
             if provider in model:
                 return cast(BEDROCK_EMBEDDING_PROVIDERS_LITERAL, provider)
-        
+
         return None
 
     def _get_aws_region_name(
@@ -462,6 +562,7 @@ class BaseAWSLLM:
         aws_region_name: Optional[str],
         aws_sts_endpoint: Optional[str],
         aws_external_id: Optional[str] = None,
+        ssl_verify: Optional[Union[bool, str]] = None,
     ) -> Tuple[Credentials, Optional[int]]:
         """
         Authenticate with AWS Web Identity Token
@@ -490,6 +591,7 @@ class BaseAWSLLM:
                 "sts",
                 region_name=aws_region_name,
                 endpoint_url=sts_endpoint,
+                verify=self._get_ssl_verify(ssl_verify),
             )
 
         # https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRoleWithWebIdentity.html
@@ -534,6 +636,7 @@ class BaseAWSLLM:
         region: str,
         web_identity_token_file: str,
         aws_external_id: Optional[str] = None,
+        ssl_verify: Optional[Union[bool, str]] = None,
     ) -> dict:
         """Handle cross-account role assumption for IRSA."""
         import boto3
@@ -546,7 +649,9 @@ class BaseAWSLLM:
 
         # Create an STS client without credentials
         with tracer.trace("boto3.client(sts) for manual IRSA"):
-            sts_client = boto3.client("sts", region_name=region)
+            sts_client = boto3.client(
+                "sts", region_name=region, verify=self._get_ssl_verify(ssl_verify)
+            )
 
         # Manually assume the IRSA role with the session name
         verbose_logger.debug(
@@ -569,6 +674,7 @@ class BaseAWSLLM:
                 aws_access_key_id=irsa_creds["AccessKeyId"],
                 aws_secret_access_key=irsa_creds["SecretAccessKey"],
                 aws_session_token=irsa_creds["SessionToken"],
+                verify=self._get_ssl_verify(ssl_verify),
             )
 
         # Get current caller identity for debugging
@@ -601,13 +707,16 @@ class BaseAWSLLM:
         aws_session_name: str,
         region: str,
         aws_external_id: Optional[str] = None,
+        ssl_verify: Optional[Union[bool, str]] = None,
     ) -> dict:
         """Handle same-account role assumption for IRSA."""
         import boto3
 
         verbose_logger.debug("Same account role assumption, using automatic IRSA")
         with tracer.trace("boto3.client(sts) with automatic IRSA"):
-            sts_client = boto3.client("sts", region_name=region)
+            sts_client = boto3.client(
+                "sts", region_name=region, verify=self._get_ssl_verify(ssl_verify)
+            )
 
         # Get current caller identity for debugging
         try:
@@ -662,6 +771,7 @@ class BaseAWSLLM:
         aws_role_name: str,
         aws_session_name: str,
         aws_external_id: Optional[str] = None,
+        ssl_verify: Optional[Union[bool, str]] = None,
     ) -> Tuple[Credentials, Optional[int]]:
         """
         Authenticate with AWS Role
@@ -704,10 +814,15 @@ class BaseAWSLLM:
                         region,
                         web_identity_token_file,
                         aws_external_id,
+                        ssl_verify=ssl_verify,
                     )
                 else:
                     sts_response = self._handle_irsa_same_account(
-                        aws_role_name, aws_session_name, region, aws_external_id
+                        aws_role_name,
+                        aws_session_name,
+                        region,
+                        aws_external_id,
+                        ssl_verify=ssl_verify,
                     )
 
                 return self._extract_credentials_and_ttl(sts_response)
@@ -730,7 +845,9 @@ class BaseAWSLLM:
         # This allows the web identity token to work automatically
         if aws_access_key_id is None and aws_secret_access_key is None:
             with tracer.trace("boto3.client(sts)"):
-                sts_client = boto3.client("sts")
+                sts_client = boto3.client(
+                    "sts", verify=self._get_ssl_verify(ssl_verify)
+                )
         else:
             with tracer.trace("boto3.client(sts)"):
                 sts_client = boto3.client(
@@ -738,6 +855,7 @@ class BaseAWSLLM:
                     aws_access_key_id=aws_access_key_id,
                     aws_secret_access_key=aws_secret_access_key,
                     aws_session_token=aws_session_token,
+                    verify=self._get_ssl_verify(ssl_verify),
                 )
 
         assume_role_params = {
@@ -851,7 +969,7 @@ class BaseAWSLLM:
         api_base: Optional[str],
         aws_bedrock_runtime_endpoint: Optional[str],
         aws_region_name: str,
-        endpoint_type: Optional[Literal["runtime", "agent"]] = "runtime",
+        endpoint_type: Optional[Literal["runtime", "agent", "agentcore"]] = "runtime",
     ) -> Tuple[str, str]:
         env_aws_bedrock_runtime_endpoint = get_secret("AWS_BEDROCK_RUNTIME_ENDPOINT")
         if api_base is not None:
@@ -885,7 +1003,9 @@ class BaseAWSLLM:
         return endpoint_url, proxy_endpoint_url
 
     def _select_default_endpoint_url(
-        self, endpoint_type: Optional[Literal["runtime", "agent"]], aws_region_name: str
+        self,
+        endpoint_type: Optional[Literal["runtime", "agent", "agentcore"]],
+        aws_region_name: str,
     ) -> str:
         """
         Select the default endpoint url based on the endpoint type
@@ -894,6 +1014,8 @@ class BaseAWSLLM:
         """
         if endpoint_type == "agent":
             return f"https://bedrock-agent-runtime.{aws_region_name}.amazonaws.com"
+        elif endpoint_type == "agentcore":
+            return f"https://bedrock-agentcore.{aws_region_name}.amazonaws.com"
         else:
             return f"https://bedrock-runtime.{aws_region_name}.amazonaws.com"
 
@@ -984,11 +1106,23 @@ class BaseAWSLLM:
                 raise ImportError(
                     "Missing boto3 to call bedrock. Run 'pip install boto3'."
                 )
+
+            # Filter headers for AWS signature calculation
+            # AWS SigV4 only includes specific headers in signature calculation
+            aws_signature_headers = self._filter_headers_for_aws_signature(headers)
             sigv4 = SigV4Auth(credentials, "bedrock", aws_region_name)
             request = AWSRequest(
-                method="POST", url=endpoint_url, data=data, headers=headers
+                method="POST",
+                url=endpoint_url,
+                data=data,
+                headers=aws_signature_headers,
             )
             sigv4.add_auth(request)
+
+            # Add back all original headers (including forwarded ones) after signature calculation
+            for header_name, header_value in headers.items():
+                request.headers[header_name] = header_value
+
             if (
                 extra_headers is not None and "Authorization" in extra_headers
             ):  # prevent sigv4 from overwriting the auth header
@@ -997,9 +1131,39 @@ class BaseAWSLLM:
 
         return prepped
 
+    def _filter_headers_for_aws_signature(self, headers: dict) -> dict:
+        """
+        Filter headers to only include those that AWS SigV4 includes in signature calculation.
+        This Fixes forwarded client headers from breaking the signature calculation.
+        """
+        aws_signature_headers = {}
+        aws_headers = {
+            "host",
+            "content-type",
+            "date",
+            "x-amz-date",
+            "x-amz-security-token",
+            "x-amz-content-sha256",
+            "x-amz-algorithm",
+            "x-amz-credential",
+            "x-amz-signedheaders",
+            "x-amz-signature",
+        }
+
+        for header_name, header_value in headers.items():
+            header_lower = header_name.lower()
+            if (
+                header_lower in aws_headers
+                or header_lower.startswith("x-amz-")
+                or header_lower.startswith("x-amzn-")
+            ):
+                aws_signature_headers[header_name] = header_value
+
+        return aws_signature_headers
+
     def _sign_request(
         self,
-        service_name: Literal["bedrock", "sagemaker"],
+        service_name: Literal["bedrock", "sagemaker", "bedrock-agentcore", "s3vectors"],
         headers: dict,
         optional_params: dict,
         request_data: dict,
@@ -1069,15 +1233,20 @@ class BaseAWSLLM:
         else:
             headers = {"Content-Type": "application/json"}
 
+        aws_signature_headers = self._filter_headers_for_aws_signature(headers)
         request = AWSRequest(
             method="POST",
             url=api_base,
             data=json.dumps(request_data),
-            headers=headers,
+            headers=aws_signature_headers,
         )
         sigv4.add_auth(request)
 
         request_headers_dict = dict(request.headers)
+        # Add back original headers after signing. Only headers in SignedHeaders
+        # are integrity-protected; forwarded headers (x-forwarded-*) must remain unsigned.
+        for header_name, header_value in headers.items():
+            request_headers_dict[header_name] = header_value
         if (
             headers is not None and "Authorization" in headers
         ):  # prevent sigv4 from overwriting the auth header

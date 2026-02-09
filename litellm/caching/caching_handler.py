@@ -14,10 +14,10 @@ It utilizes the (RedisCache, s3Cache, RedisSemanticCache, QdrantSemanticCache, I
 In each method it will call the appropriate method from caching.py
 """
 
-import time
 import asyncio
 import datetime
 import inspect
+import time
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -44,6 +44,7 @@ from litellm.litellm_core_utils.logging_utils import (
     _assemble_complete_response_from_streaming_chunks,
 )
 from litellm.types.caching import CachedEmbedding
+from litellm.types.llms.openai import ResponsesAPIResponse
 from litellm.types.rerank import RerankResponse
 from litellm.types.utils import (
     CachingDetails,
@@ -62,12 +63,10 @@ else:
     LiteLLMLoggingObj = Any
 
 
-from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
-
-
 from litellm.litellm_core_utils.core_helpers import (
-_get_parent_otel_span_from_kwargs,
+    _get_parent_otel_span_from_kwargs,
 )
+from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 
 
 class CachingHandlerResponse(BaseModel):
@@ -214,9 +213,7 @@ class LLMCachingHandler:
                             end_time=end_time,
                             cache_hit=cache_hit,
                         )
-                    cache_key = litellm.cache._get_preset_cache_key_from_kwargs(
-                        **kwargs
-                    )
+                    cache_key = litellm.cache.get_cache_key(**kwargs)
                     if (
                         isinstance(cached_result, BaseModel)
                         or isinstance(cached_result, CustomStreamWrapper)
@@ -318,7 +315,7 @@ class LLMCachingHandler:
                     )
                     self._update_litellm_logging_obj_environment(
                         logging_obj=logging_obj,
-                        model=model,
+                        model=f"{custom_llm_provider}/{model}",
                         kwargs=kwargs,
                         cached_result=cached_result,
                         is_async=False,
@@ -330,9 +327,7 @@ class LLMCachingHandler:
                         end_time=end_time,
                         cache_hit=cache_hit
                     )
-                    cache_key = litellm.cache._get_preset_cache_key_from_kwargs(
-                        **kwargs
-                    )
+                    cache_key = litellm.cache.get_cache_key(**kwargs)
                     if (
                         isinstance(cached_result, BaseModel)
                         or isinstance(cached_result, CustomStreamWrapper)
@@ -733,6 +728,12 @@ class LLMCachingHandler:
                 response_type="audio_transcription",
                 hidden_params=hidden_params,
             )
+        elif (
+            call_type == "aresponses"
+            or call_type == "responses"
+        ) and isinstance(cached_result, dict):
+            # Convert cached dict back to ResponsesAPIResponse object
+            cached_result = ResponsesAPIResponse(**cached_result)
 
         if (
             hasattr(cached_result, "_hidden_params")
@@ -832,6 +833,7 @@ class LLMCachingHandler:
                 or isinstance(result, litellm.EmbeddingResponse)
                 or isinstance(result, TranscriptionResponse)
                 or isinstance(result, RerankResponse)
+                or isinstance(result, ResponsesAPIResponse)
             ):
                 if (
                     isinstance(result, EmbeddingResponse)

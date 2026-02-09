@@ -23,7 +23,7 @@ def test_update_kwargs_does_not_mutate_defaults_and_merges_metadata():
             {
                 "model_name": "gpt-3.5-turbo",
                 "litellm_params": {
-                    "model": "azure/gpt-4.1-nano",
+                    "model": "azure/gpt-4.1-mini",
                     "api_key": os.getenv("AZURE_API_KEY"),
                     "api_version": os.getenv("AZURE_API_VERSION"),
                     "api_base": os.getenv("AZURE_API_BASE"),
@@ -102,7 +102,7 @@ async def test_arouter_with_tags_and_fallbacks():
             {
                 "model_name": "anthropic-claude-3-5-sonnet",
                 "litellm_params": {
-                    "model": "claude-3-5-sonnet-latest",
+                    "model": "claude-sonnet-4-5-20250929",
                     "mock_response": "Hello, world 2!",
                 },
             },
@@ -670,9 +670,9 @@ async def test_router_v1_messages_fallbacks():
     router = litellm.Router(
         model_list=[
             {
-                "model_name": "claude-3-5-sonnet-latest",
+                "model_name": "claude-sonnet-4-5-20250929",
                 "litellm_params": {
-                    "model": "anthropic/claude-3-5-sonnet-latest",
+                    "model": "anthropic/claude-sonnet-4-5-20250929",
                     "mock_response": "litellm.InternalServerError",
                 },
             },
@@ -685,12 +685,12 @@ async def test_router_v1_messages_fallbacks():
             },
         ],
         fallbacks=[
-            {"claude-3-5-sonnet-latest": ["bedrock-claude"]},
+            {"claude-sonnet-4-5-20250929": ["bedrock-claude"]},
         ],
     )
 
     result = await router.aanthropic_messages(
-        model="claude-3-5-sonnet-latest",
+        model="claude-sonnet-4-5-20250929",
         messages=[{"role": "user", "content": "Hello, world!"}],
         max_tokens=256,
     )
@@ -1053,7 +1053,6 @@ async def test_acompletion_streaming_iterator():
         "async_function_with_fallbacks_common_utils",
         return_value=mock_fallback_response,
     ) as mock_fallback_utils:
-
         collected_chunks = []
         result = await router._acompletion_streaming_iterator(
             model_response=mock_error_response,
@@ -1150,7 +1149,6 @@ async def test_acompletion_streaming_iterator_edge_cases():
         "async_function_with_fallbacks_common_utils",
         return_value=mock_fallback_response,
     ) as mock_fallback_utils:
-
         collected_chunks = []
         iterator = await router._acompletion_streaming_iterator(
             model_response=mock_response,
@@ -1548,3 +1546,447 @@ def test_get_deployment_model_info_base_model_merge_priority():
             assert result["key"] == "gpt-4"
 
     print("✓ Base model merge priority test passed!")
+
+
+def test_add_deployment_model_to_endpoint_for_llm_passthrough_route():
+    """
+    Test that _add_deployment_model_to_endpoint_for_llm_passthrough_route correctly strips bedrock provider prefix
+    """
+    router = litellm.Router(
+        model_list=[
+            {
+                "model_name": "special-bedrock-model",
+                "litellm_params": {
+                    "model": "bedrock/us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+                },
+            }
+        ],
+    )
+
+    # Test Case 1: Bedrock model with provider prefix - should strip "bedrock/" prefix
+    kwargs = {
+        "endpoint": "/model/special-bedrock-model/invoke",
+        "custom_llm_provider": "bedrock",
+    }
+    result = router._add_deployment_model_to_endpoint_for_llm_passthrough_route(
+        kwargs=kwargs,
+        model="special-bedrock-model",
+        model_name="bedrock/us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+    )
+    assert (
+        result["endpoint"]
+        == "/model/us.anthropic.claude-3-5-sonnet-20240620-v1:0/invoke"
+    ), f"Expected '/model/us.anthropic.claude-3-5-sonnet-20240620-v1:0/invoke', got '{result['endpoint']}'"
+
+    # Test Case 2: Bedrock invoke-with-response-stream endpoint
+    kwargs = {
+        "endpoint": "/model/special-bedrock-model/invoke-with-response-stream",
+        "custom_llm_provider": "bedrock",
+    }
+    result = router._add_deployment_model_to_endpoint_for_llm_passthrough_route(
+        kwargs=kwargs,
+        model="special-bedrock-model",
+        model_name="bedrock/us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+    )
+    assert (
+        result["endpoint"]
+        == "/model/us.anthropic.claude-3-5-sonnet-20240620-v1:0/invoke-with-response-stream"
+    ), f"Expected streaming endpoint with stripped prefix, got '{result['endpoint']}'"
+
+    # Test Case 3: Bedrock converse endpoint
+    kwargs = {
+        "endpoint": "/model/bedrock-model/converse",
+        "custom_llm_provider": "bedrock",
+    }
+    result = router._add_deployment_model_to_endpoint_for_llm_passthrough_route(
+        kwargs=kwargs,
+        model="bedrock-model",
+        model_name="bedrock/us.meta.llama3-8b-instruct-v1:0",
+    )
+    assert (
+        result["endpoint"] == "/model/us.meta.llama3-8b-instruct-v1:0/converse"
+    ), f"Expected '/model/us.meta.llama3-8b-instruct-v1:0/converse', got '{result['endpoint']}'"
+
+    # Test Case 4: Bedrock provider prefix auto-detected from model_name
+    kwargs = {
+        "endpoint": "/model/router-model/invoke",
+    }
+    result = router._add_deployment_model_to_endpoint_for_llm_passthrough_route(
+        kwargs=kwargs,
+        model="router-model",
+        model_name="bedrock/us.meta.llama3-8b-instruct-v1:0",
+    )
+    assert (
+        result["endpoint"] == "/model/us.meta.llama3-8b-instruct-v1:0/invoke"
+    ), f"Expected '/model/us.meta.llama3-8b-instruct-v1:0/invoke', got '{result['endpoint']}'"
+
+
+@pytest.mark.asyncio
+async def test_router_acompletion_with_unknown_model_and_default_fallback():
+    """
+    Test that the router successfully uses a default fallback when a completely
+    unknown model is requested. It should not raise a BadRequestError.
+    This test verifies the fix for issue #15114.
+    """
+    model_list = [
+        {
+            "model_name": "gpt-4o",  # This is the fallback model
+            "litellm_params": {
+                "model": "azure/gpt-4o-real",  # The actual underlying model name
+                "api_key": "fake-key",
+                "api_base": "https://fake-endpoint.openai.azure.com/",
+                "mock_response": "this is the fallback response",  # Mocked response to prevent real API calls
+            },
+        }
+    ]
+
+    # Initialize the router with a default fallback
+    router = litellm.Router(model_list=model_list, default_fallbacks=["gpt-4o"])
+
+    messages = [
+        {"role": "user", "content": "This call should succeed by falling back."}
+    ]
+
+    # Call completion with a model name that is NOT in the model_list
+    response = await router.acompletion(
+        model="completely-unknown-model", messages=messages
+    )
+
+    # Check that the call did not fail and we received a valid response object.
+    assert response is not None
+
+    # Check that the content of the response is from the MOCKED fallback model.
+    assert response.choices[0].message.content == "this is the fallback response"
+
+    # Check that the response object reports the model that was *actually* called.
+    assert response.model == "gpt-4o-real"
+
+
+@pytest.mark.asyncio
+async def test_router_acompletion_with_unknown_model_and_no_fallback():
+    """
+    Test that the router still raises a BadRequestError for an unknown model
+    when no default fallbacks are configured. This ensures we don't break
+    the original behavior.
+    """
+    model_list = [
+        {
+            "model_name": "gpt-4o",
+            "litellm_params": {
+                "model": "azure/gpt-4o-real",
+                "api_key": "fake-key",
+                "mock_response": "this should not be called",
+            },
+        }
+    ]
+
+    # Initialize the router WITHOUT any default fallbacks
+    router = litellm.Router(model_list=model_list)
+
+    messages = [{"role": "user", "content": "This call should fail."}]
+
+    # Use pytest.raises to assert that a BadRequestError is thrown.
+    with pytest.raises(litellm.BadRequestError) as excinfo:
+        await router.acompletion(model="completely-unknown-model", messages=messages)
+
+    # Check that the error message is correct.
+    # The router returns 'no healthy deployments' because get_model_list returns [] not None.
+    assert "no healthy deployments for this model" in str(excinfo.value)
+
+
+def test_get_deployment_credentials_with_provider_aws_bedrock_runtime_endpoint():
+    """
+    Test that get_deployment_credentials_with_provider correctly copies
+    aws_bedrock_runtime_endpoint from deployment litellm_params to credentials.
+    """
+    router = litellm.Router(
+        model_list=[
+            {
+                "model_name": "bedrock-claude-model",
+                "litellm_params": {
+                    "model": "bedrock/us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+                    "aws_access_key_id": "test-access-key",
+                    "aws_secret_access_key": "test-secret-key",
+                    "aws_region_name": "us-east-1",
+                    "aws_bedrock_runtime_endpoint": "https://bedrock-runtime.us-east-1.amazonaws.com",
+                },
+            }
+        ],
+    )
+
+    credentials = router.get_deployment_credentials_with_provider(
+        model_id="bedrock-claude-model"
+    )
+
+    assert credentials is not None
+    assert credentials["aws_bedrock_runtime_endpoint"] == "https://bedrock-runtime.us-east-1.amazonaws.com"
+    assert credentials["aws_access_key_id"] == "test-access-key"
+    assert credentials["aws_secret_access_key"] == "test-secret-key"
+    assert credentials["aws_region_name"] == "us-east-1"
+    assert credentials["custom_llm_provider"] == "bedrock"
+
+
+def test_get_available_guardrail_single_deployment():
+    """
+    Test get_available_guardrail returns the single guardrail when only one exists.
+    """
+    guardrail_config = {
+        "guardrail_name": "content-filter",
+        "litellm_params": {"guardrail": "custom", "mode": "pre_call"},
+        "id": "guardrail-1",
+    }
+
+    router = litellm.Router(
+        model_list=[
+            {
+                "model_name": "gpt-3.5-turbo",
+                "litellm_params": {"model": "gpt-3.5-turbo"},
+            }
+        ],
+        guardrail_list=[guardrail_config],
+    )
+
+    result = router.get_available_guardrail(guardrail_name="content-filter")
+    assert result == guardrail_config
+
+
+def test_get_available_guardrail_multiple_deployments():
+    """
+    Test get_available_guardrail load balances across multiple guardrails.
+    """
+    guardrail_1 = {
+        "guardrail_name": "content-filter",
+        "litellm_params": {"guardrail": "custom", "mode": "pre_call"},
+        "id": "guardrail-1",
+    }
+    guardrail_2 = {
+        "guardrail_name": "content-filter",
+        "litellm_params": {"guardrail": "custom", "mode": "pre_call"},
+        "id": "guardrail-2",
+    }
+
+    router = litellm.Router(
+        model_list=[
+            {
+                "model_name": "gpt-3.5-turbo",
+                "litellm_params": {"model": "gpt-3.5-turbo"},
+            }
+        ],
+        guardrail_list=[guardrail_1, guardrail_2],
+    )
+
+    # Call multiple times to verify load balancing
+    results = set()
+    for _ in range(20):
+        result = router.get_available_guardrail(guardrail_name="content-filter")
+        results.add(result["id"])
+
+    # Both guardrails should be selected at least once
+    assert "guardrail-1" in results or "guardrail-2" in results
+
+
+def test_get_available_guardrail_not_found():
+    """
+    Test get_available_guardrail raises ValueError when guardrail not found.
+    """
+    router = litellm.Router(
+        model_list=[
+            {
+                "model_name": "gpt-3.5-turbo",
+                "litellm_params": {"model": "gpt-3.5-turbo"},
+            }
+        ],
+        guardrail_list=[],
+    )
+
+    with pytest.raises(ValueError, match="No guardrail found with name"):
+        router.get_available_guardrail(guardrail_name="non-existent")
+
+
+@pytest.mark.asyncio
+async def test_aguardrail_helper():
+    """
+    Test _aguardrail_helper selects a guardrail and executes the original function.
+    """
+    guardrail_config = {
+        "guardrail_name": "content-filter",
+        "litellm_params": {"guardrail": "custom", "mode": "pre_call"},
+        "id": "guardrail-1",
+    }
+
+    router = litellm.Router(
+        model_list=[
+            {
+                "model_name": "gpt-3.5-turbo",
+                "litellm_params": {"model": "gpt-3.5-turbo"},
+            }
+        ],
+        guardrail_list=[guardrail_config],
+    )
+
+    # Mock the original function
+    async def mock_original_function(**kwargs):
+        return {"result": "success", "selected_guardrail": kwargs.get("selected_guardrail")}
+
+    result = await router._aguardrail_helper(
+        model="content-filter",
+        original_generic_function=mock_original_function,
+    )
+
+    assert result["result"] == "success"
+    assert result["selected_guardrail"] == guardrail_config
+
+
+@pytest.mark.asyncio
+async def test_aguardrail():
+    """
+    Test aguardrail executes a guardrail with load balancing and fallbacks.
+    """
+    guardrail_config = {
+        "guardrail_name": "content-filter",
+        "litellm_params": {"guardrail": "custom", "mode": "pre_call"},
+        "id": "guardrail-1",
+    }
+
+    router = litellm.Router(
+        model_list=[
+            {
+                "model_name": "gpt-3.5-turbo",
+                "litellm_params": {"model": "gpt-3.5-turbo"},
+            }
+        ],
+        guardrail_list=[guardrail_config],
+    )
+
+    # Mock the original function
+    async def mock_original_function(**kwargs):
+        return {"result": "success", "selected_guardrail": kwargs.get("selected_guardrail")}
+
+    result = await router.aguardrail(
+        guardrail_name="content-filter",
+        original_function=mock_original_function,
+    )
+
+    assert result["result"] == "success"
+    assert result["selected_guardrail"]["id"] == "guardrail-1"
+
+@pytest.mark.asyncio
+async def test_anthropic_messages_call_type_is_cached():
+    """
+    Regression test: Verify that anthropic_messages call type is allowed
+    in PromptCachingDeploymentCheck.async_log_success_event.
+    """
+    import asyncio
+    from litellm.router_utils.pre_call_checks.prompt_caching_deployment_check import (
+        PromptCachingDeploymentCheck,
+    )
+    from litellm.router_utils.prompt_caching_cache import PromptCachingCache
+    from litellm.caching.dual_cache import DualCache
+    from litellm.types.utils import CallTypes
+    from litellm.types.utils import (
+        StandardLoggingPayload,
+        StandardLoggingModelInformation,
+        StandardLoggingMetadata,
+        StandardLoggingHiddenParams,
+    )
+    
+    # Create mock standard logging payload inline
+    def create_standard_logging_payload() -> StandardLoggingPayload:
+        return StandardLoggingPayload(
+            id="test_id",
+            call_type="completion",
+            response_cost=0.1,
+            response_cost_failure_debug_info=None,
+            status="success",
+            total_tokens=30,
+            prompt_tokens=20,
+            completion_tokens=10,
+            startTime=1234567890.0,
+            endTime=1234567891.0,
+            completionStartTime=1234567890.5,
+            model_map_information=StandardLoggingModelInformation(
+                model_map_key="gpt-3.5-turbo", model_map_value=None
+            ),
+            model="gpt-3.5-turbo",
+            model_id="model-123",
+            model_group="openai-gpt",
+            api_base="https://api.openai.com",
+            metadata=StandardLoggingMetadata(
+                user_api_key_hash="test_hash",
+                user_api_key_org_id=None,
+                user_api_key_alias="test_alias",
+                user_api_key_team_id="test_team",
+                user_api_key_user_id="test_user",
+                user_api_key_team_alias="test_team_alias",
+                spend_logs_metadata=None,
+                requester_ip_address="127.0.0.1",
+                requester_metadata=None,
+            ),
+            cache_hit=False,
+            cache_key=None,
+            saved_cache_cost=0.0,
+            request_tags=[],
+            end_user=None,
+            requester_ip_address="127.0.0.1",
+            messages=[{"role": "user", "content": "Hello, world!"}],
+            response={"choices": [{"message": {"content": "Hi there!"}}]},
+            error_str=None,
+            model_parameters={"stream": True},
+            hidden_params=StandardLoggingHiddenParams(
+                model_id="model-123",
+                cache_key=None,
+                api_base="https://api.openai.com",
+                response_cost="0.1",
+                additional_headers=None,
+            ),
+        )
+    
+    cache = DualCache()
+    deployment_check = PromptCachingDeploymentCheck(cache=cache)
+    prompt_cache = PromptCachingCache(cache=cache)
+    
+    # Create messages with enough tokens to pass the caching threshold
+    test_messages = [
+        {
+            "role": "user", 
+            "content": [
+                {
+                    "type": "text", 
+                    "text": "test long message here" * 1024,
+                    "cache_control": {
+                        "type": "ephemeral",
+                        "ttl": "5m"
+                    }
+                }
+            ]
+        }
+    ]
+    test_model_id = "test-model-id-123"
+    
+    # Create a payload with anthropic_messages call type
+    payload = create_standard_logging_payload()
+    payload["call_type"] = CallTypes.anthropic_messages.value
+    payload["messages"] = test_messages
+    payload["model"] = "anthropic/claude-3-5-sonnet-20240620"
+    payload["model_id"] = test_model_id
+    
+    # Log the success event (should cache the model_id)
+    await deployment_check.async_log_success_event(
+        kwargs={"standard_logging_object": payload},
+        response_obj={},
+        start_time=1234567890.0,
+        end_time=1234567891.0,
+    )
+    
+    # Small delay to ensure cache write completes
+    await asyncio.sleep(0.1)
+    
+    # Verify that the model_id was actually cached
+    cached_result = await prompt_cache.async_get_model_id(
+        messages=test_messages,
+        tools=None,
+    )
+    
+    # This assertion will FAIL if anthropic_messages is filtered out
+    assert cached_result is not None, "Model ID should be cached for anthropic_messages call type"
+    assert cached_result["model_id"] == test_model_id, f"Expected {test_model_id}, got {cached_result['model_id']}"
