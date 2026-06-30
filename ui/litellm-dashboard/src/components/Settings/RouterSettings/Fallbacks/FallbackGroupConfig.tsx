@@ -20,16 +20,9 @@ interface FallbackGroupConfigProps {
   maxFallbacks: number;
 }
 
-export function FallbackGroupConfig({
-  group,
-  onChange,
-  availableModels,
-  maxFallbacks,
-}: FallbackGroupConfigProps) {
+export function FallbackGroupConfig({ group, onChange, availableModels, maxFallbacks }: FallbackGroupConfigProps) {
   // Filter available options for fallbacks (exclude primary only, allow already selected to be shown for deselection)
-  const availableFallbackOptions = availableModels.filter(
-    (m) => m !== group.primaryModel,
-  );
+  const availableFallbackOptions = availableModels.filter((m) => m !== group.primaryModel);
 
   const handlePrimaryChange = (value: string) => {
     let newFallbacks = [...group.fallbackModels];
@@ -78,9 +71,8 @@ export function FallbackGroupConfig({
           value={group.primaryModel}
           onChange={handlePrimaryChange}
           showSearch
-          filterOption={(input, option) =>
-            (option?.label ?? "").toLowerCase().includes(input.toLowerCase())
-          }
+          getPopupContainer={(trigger) => trigger.parentElement || document.body}
+          filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
           options={availableModels.map((m) => ({ label: m, value: m }))}
         />
         {!group.primaryModel && (
@@ -105,9 +97,7 @@ export function FallbackGroupConfig({
       >
         <label className="block text-sm font-semibold text-gray-700 mb-2">
           Fallback Chain <span className="text-red-500">*</span>
-          <span className="text-xs text-gray-500 font-normal ml-2">
-            (Max {maxFallbacks} fallbacks at a time)
-          </span>
+          <span className="text-xs text-gray-500 font-normal ml-2">(Max {maxFallbacks} fallbacks at a time)</span>
         </label>
 
         <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
@@ -118,22 +108,19 @@ export function FallbackGroupConfig({
               className="w-full"
               size="large"
               placeholder={
-                canAddMoreFallbacks
-                  ? "Select fallback models to add..."
-                  : `Maximum ${maxFallbacks} fallbacks reached`
+                canAddMoreFallbacks ? "Select fallback models to add..." : `Maximum ${maxFallbacks} fallbacks reached`
               }
               value={group.fallbackModels}
               onChange={handleFallbackSelect}
               disabled={!group.primaryModel}
+              getPopupContainer={(trigger) => trigger.parentElement || document.body}
               options={availableFallbackOptions.map((m) => ({
                 label: m,
                 value: m,
               }))}
               optionRender={(option, info) => {
                 const isSelected = group.fallbackModels.includes(option.value as string);
-                const orderIndex = isSelected
-                  ? group.fallbackModels.indexOf(option.value as string) + 1
-                  : null;
+                const orderIndex = isSelected ? group.fallbackModels.indexOf(option.value as string) + 1 : null;
                 return (
                   <div className="flex items-center gap-2">
                     {isSelected && orderIndex !== null && (
@@ -155,9 +142,7 @@ export function FallbackGroupConfig({
                 </Tooltip>
               )}
               showSearch
-              filterOption={(input, option) =>
-                (option?.label ?? "").toLowerCase().includes(input.toLowerCase())
-              }
+              filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
             />
             <p className="text-xs text-gray-500 mt-1 ml-1">
               {canAddMoreFallbacks

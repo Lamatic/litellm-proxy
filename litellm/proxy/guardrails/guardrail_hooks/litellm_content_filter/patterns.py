@@ -36,8 +36,7 @@ for pattern_data in _PATTERNS_DATA["patterns"]:
 
 # Build lookup dictionaries from JSON
 PREBUILT_PATTERNS: Dict[str, str] = {
-    pattern_data["name"]: pattern_data["pattern"]
-    for pattern_data in _PATTERNS_DATA["patterns"]
+    pattern_data["name"]: pattern_data["pattern"] for pattern_data in _PATTERNS_DATA["patterns"]
 }
 
 
@@ -53,11 +52,7 @@ KNOWN_PATTERN_KEYS = {
 
 PATTERN_EXTRA_CONFIG: Dict[str, Dict[str, Any]] = {}
 for pattern_data in _PATTERNS_DATA["patterns"]:
-    extra_config = {
-        key: value
-        for key, value in pattern_data.items()
-        if key not in KNOWN_PATTERN_KEYS
-    }
+    extra_config = {key: value for key, value in pattern_data.items() if key not in KNOWN_PATTERN_KEYS}
     PATTERN_EXTRA_CONFIG[pattern_data["name"]] = extra_config
 
 
@@ -76,10 +71,7 @@ def get_compiled_pattern(pattern_name: str) -> Pattern:
     """
     if pattern_name not in PREBUILT_PATTERNS:
         available_patterns = ", ".join(PREBUILT_PATTERNS.keys())
-        raise ValueError(
-            f"Unknown pattern name: '{pattern_name}'. "
-            f"Available patterns: {available_patterns}"
-        )
+        raise ValueError(f"Unknown pattern name: '{pattern_name}'. Available patterns: {available_patterns}")
 
     return re.compile(PREBUILT_PATTERNS[pattern_name], re.IGNORECASE)
 
@@ -105,15 +97,13 @@ for pattern_data in _PATTERNS_DATA["patterns"]:
 
 # Build display names mapping from JSON
 PATTERN_DISPLAY_NAMES: Dict[str, str] = {
-    pattern_data["name"]: pattern_data["display_name"]
-    for pattern_data in _PATTERNS_DATA["patterns"]
+    pattern_data["name"]: pattern_data["display_name"] for pattern_data in _PATTERNS_DATA["patterns"]
 }
 
 
 # Build descriptions mapping from JSON
 PATTERN_DESCRIPTIONS: Dict[str, str] = {
-    pattern_data["name"]: pattern_data["description"]
-    for pattern_data in _PATTERNS_DATA["patterns"]
+    pattern_data["name"]: pattern_data["description"] for pattern_data in _PATTERNS_DATA["patterns"]
 }
 
 
@@ -139,6 +129,9 @@ def get_available_content_categories() -> List[Dict[str, str]]:
     """
     Return available content categories for UI display.
 
+    Includes categories defined in .yaml/.yml files and in .json files
+    (e.g. harm_toxic_abuse.json).
+
     Returns:
         List of dictionaries containing category name, display_name, and description
     """
@@ -159,8 +152,8 @@ def get_available_content_categories() -> List[Dict[str, str]]:
                     category_data = yaml.safe_load(f)
 
                 if category_data and "category_name" in category_data:
-                    # Create display name from category name (convert harmful_self_harm -> Harmful Self Harm)
-                    display_name = (
+                    # Use explicit display_name if provided, otherwise auto-generate from category_name
+                    display_name = category_data.get("display_name") or (
                         category_data["category_name"].replace("_", " ").title()
                     )
 
@@ -169,13 +162,34 @@ def get_available_content_categories() -> List[Dict[str, str]]:
                             "name": category_data["category_name"],
                             "display_name": display_name,
                             "description": category_data.get("description", ""),
-                            "default_action": category_data.get(
-                                "default_action", "BLOCK"
-                            ),
+                            "default_action": category_data.get("default_action", "BLOCK"),
                         }
                     )
+            except Exception as e:
+                # Skip files that can't be loaded but log the error for debugging
+                from litellm._logging import verbose_proxy_logger
+
+                verbose_proxy_logger.warning(f"Failed to load category file {filename}: {str(e)}")
+                continue
+        elif filename.endswith(".json"):
+            # JSON category files (e.g. harm_toxic_abuse.json) - no YAML header, use filename
+            category_name = os.path.splitext(filename)[0]
+            try:
+                if category_name == "harm_toxic_abuse":
+                    display_name = "Harmful Toxic Abuse"
+                    description = "Detects harmful, toxic, or abusive language and content"
+                else:
+                    display_name = category_name.replace("_", " ").title()
+                    description = f"Content category: {display_name}"
+                available_categories.append(
+                    {
+                        "name": category_name,
+                        "display_name": display_name,
+                        "description": description,
+                        "default_action": "BLOCK",
+                    }
+                )
             except Exception:
-                # Skip files that can't be loaded
                 continue
 
     # Sort by name for consistent ordering

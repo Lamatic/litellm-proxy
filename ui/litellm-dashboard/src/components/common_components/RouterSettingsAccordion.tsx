@@ -5,7 +5,7 @@ import RouterSettingsForm, { RouterSettingsFormValue } from "../router_settings/
 import { Fallbacks } from "../Settings/RouterSettings/Fallbacks/AddFallbacks";
 import { FallbackSelectionForm } from "../Settings/RouterSettings/Fallbacks/FallbackSelectionForm";
 import { FallbackGroup } from "../Settings/RouterSettings/Fallbacks/FallbackGroupConfig";
-import { fetchAvailableModels, ModelGroup } from "../playground/llm_calls/fetch_models";
+import { fetchAvailableModels, ModelGroup } from "@/components/llm_calls/fetch_models";
 
 export interface RouterSettingsAccordionValue {
   router_settings: {
@@ -84,7 +84,7 @@ const RouterSettingsAccordion = forwardRef<RouterSettingsAccordionRef, RouterSet
     // Initialize from value prop if provided (only when value actually changes externally)
     useEffect(() => {
       // Create a stable key from the value to detect actual external changes
-      const valueKey = value?.router_settings 
+      const valueKey = value?.router_settings
         ? JSON.stringify({
             routing_strategy: value.router_settings.routing_strategy,
             fallbacks: value.router_settings.fallbacks,
@@ -241,9 +241,13 @@ const RouterSettingsAccordion = forwardRef<RouterSettingsAccordionRef, RouterSet
               key !== "fallbacks"
             ) {
               const inputEl = document.querySelector(`input[name="${key}"]`) as HTMLInputElement | null;
-              if (inputEl && inputEl.value !== undefined && inputEl.value !== "") {
-                const parsed = parseInputValue(key, inputEl.value, value);
-                return [key, parsed];
+              if (inputEl) {
+                if (inputEl.value !== undefined && inputEl.value !== "") {
+                  const parsed = parseInputValue(key, inputEl.value, value);
+                  return [key, parsed];
+                }
+                // Input exists but is empty — user cleared it, set to null
+                return [key, null];
               }
               return [key, value];
             } else if (key === "routing_strategy") {
@@ -265,7 +269,10 @@ const RouterSettingsAccordion = forwardRef<RouterSettingsAccordionRef, RouterSet
               if (ttlElement?.value) {
                 routingStrategyArgs["ttl"] = Number(ttlElement.value);
               }
-              return ["routing_strategy_args", Object.keys(routingStrategyArgs).length > 0 ? routingStrategyArgs : null];
+              return [
+                "routing_strategy_args",
+                Object.keys(routingStrategyArgs).length > 0 ? routingStrategyArgs : null,
+              ];
             }
             return [key, value];
           })
@@ -358,7 +365,6 @@ const RouterSettingsAccordion = forwardRef<RouterSettingsAccordionRef, RouterSet
                 groups={fallbackGroups}
                 onGroupsChange={handleFallbackGroupsChange}
                 availableModels={availableModels}
-                maxFallbacks={5}
                 maxGroups={5}
               />
             </TabPanel>
@@ -366,7 +372,8 @@ const RouterSettingsAccordion = forwardRef<RouterSettingsAccordionRef, RouterSet
         </TabGroup>
       </div>
     );
-  });
+  },
+);
 
 RouterSettingsAccordion.displayName = "RouterSettingsAccordion";
 

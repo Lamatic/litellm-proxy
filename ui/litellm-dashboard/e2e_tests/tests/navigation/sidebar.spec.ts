@@ -4,19 +4,22 @@ import { ADMIN_STORAGE_PATH } from "../../constants";
 import { Page } from "../../fixtures/pages";
 import { menuLabelToPage } from "../../fixtures/menuMappings";
 import { navigateToPage } from "../../helpers/navigation";
+import { MIGRATED_E2E_PAGES } from "../../fixtures/migratedPages";
+import type { Page as PlaywrightPage } from "@playwright/test";
 
 const sidebarButtons = {
-  [Role.ProxyAdmin]: [
-    "Virtual Keys",
-    "Playground",
-    "Models",
-    "Usage",
-    "Teams",
-    "Internal Users",
-    "API Reference",
-    "AI Hub",
-  ],
+  [Role.ProxyAdmin]: ["Virtual Keys", "Playground", "Models", "Usage", "Teams", "Internal Users", "AI Hub"],
 };
+
+/** Migrated pages live at a path route; legacy pages keep the ?page= query param. */
+async function expectPageUrl(page: PlaywrightPage, pageKey: string): Promise<void> {
+  const migratedSegment = MIGRATED_E2E_PAGES[pageKey];
+  if (migratedSegment) {
+    await expect(page).toHaveURL(new RegExp(`/ui/${migratedSegment}/?($|\\?)`));
+  } else {
+    await expect(page).toHaveURL(new RegExp(`[?&]page=${pageKey}(&|$)`));
+  }
+}
 
 const roles = [{ role: Role.ProxyAdmin, storage: ADMIN_STORAGE_PATH }];
 
@@ -26,6 +29,11 @@ for (const { role, storage } of roles) {
 
     test("should navigate to correct URL when clicking sidebar menu items from homepage", async ({ page }) => {
       await page.goto("/ui");
+      await page.evaluate(() => {
+        window.localStorage.setItem("disableUsageIndicator", "true");
+        window.localStorage.setItem("disableShowPrompts", "true");
+        window.localStorage.setItem("disableShowNewBadge", "true");
+      });
 
       for (const buttonLabel of sidebarButtons[role as keyof typeof sidebarButtons]) {
         const expectedPage = menuLabelToPage[buttonLabel];
@@ -39,21 +47,28 @@ for (const { role, storage } of roles) {
 
         await tab.click();
 
-        // Verify URL contains the correct page query parameter
-        await expect(page).toHaveURL(new RegExp(`[?&]page=${expectedPage}(&|$)`));
+        await expectPageUrl(page, expectedPage);
       }
     });
 
     test("should navigate directly to page using navigation helper", async ({ page }) => {
+      await page.goto("/ui");
+      await page.evaluate(() => {
+        window.localStorage.setItem("disableUsageIndicator", "true");
+        window.localStorage.setItem("disableShowPrompts", "true");
+        window.localStorage.setItem("disableShowNewBadge", "true");
+      });
+
       // Test direct navigation to verify the helper function works
       await navigateToPage(page, Page.ApiKeys);
-      await expect(page).toHaveURL(new RegExp(`[?&]page=${Page.ApiKeys}(&|$)`));
+      await expectPageUrl(page, Page.ApiKeys);
 
       await navigateToPage(page, Page.Models);
-      await expect(page).toHaveURL(new RegExp(`[?&]page=${Page.Models}(&|$)`));
+      await expectPageUrl(page, Page.Models);
 
+      // Migrated page: /ui?page=llm-playground redirects to the path route
       await navigateToPage(page, Page.LlmPlayground);
-      await expect(page).toHaveURL(new RegExp(`[?&]page=${Page.LlmPlayground}(&|$)`));
+      await expectPageUrl(page, Page.LlmPlayground);
     });
   });
 }

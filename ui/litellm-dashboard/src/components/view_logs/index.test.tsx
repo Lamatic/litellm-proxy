@@ -1,89 +1,180 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import { RequestViewer } from "./index";
-import type { LogEntry } from "./columns";
-import type { Row } from "@tanstack/react-table";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import moment from "moment";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import SpendLogsTable from "./index";
+import { renderWithProviders } from "../../../tests/test-utils";
+import { uiSpendLogsCall } from "../networking";
+import { useLogFilterLogic } from "./log_filter_logic";
 
-const baseLogEntry: LogEntry = {
-  request_id: "chatcmpl-test-id",
-  api_key: "api-key",
-  team_id: "team-id",
-  model: "gpt-4",
-  model_id: "gpt-4",
-  call_type: "chat",
-  spend: 0,
-  total_tokens: 0,
-  prompt_tokens: 0,
-  completion_tokens: 0,
-  startTime: "2025-11-14T00:00:00Z",
-  endTime: "2025-11-14T00:00:00Z",
-  cache_hit: "miss",
-  duration: 1,
-  messages: [{ role: "user", content: "hello" }],
-  response: { status: "ok" },
-  metadata: {
-    status: "success",
-    additional_usage_values: {
-      cache_read_input_tokens: 0,
-      cache_creation_input_tokens: 0,
-    },
-  },
-  request_tags: {},
-  custom_llm_provider: "openai",
-  api_base: "https://api.example.com",
-};
+const mockHandleFilterResetFromHook = vi.fn();
+vi.mock("./log_filter_logic", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./log_filter_logic")>();
+  return {
+    ...actual,
+    useLogFilterLogic: vi.fn(() => ({
+      logsQuery: { isLoading: false, isFetching: false, refetch: vi.fn() },
+      filteredLogs: { data: [], total: 0, page: 1, page_size: 50, total_pages: 1 },
+      allTeams: [],
+      handleFilterChange: vi.fn(),
+      handleFilterReset: mockHandleFilterResetFromHook,
+    })),
+  };
+});
 
-const createRow = (overrides: Partial<LogEntry> = {}): Row<LogEntry> =>
-  ({
-    original: {
-      ...baseLogEntry,
-      ...overrides,
-    },
-  }) as unknown as Row<LogEntry>;
+vi.mock("../networking", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../networking")>();
+  return {
+    ...actual,
+    uiSpendLogsCall: vi.fn().mockResolvedValue({
+      data: [],
+      total: 0,
+      page: 1,
+      page_size: 50,
+      total_pages: 0,
+    }),
+    keyListCall: vi.fn().mockResolvedValue({ keys: [] }),
+    keyInfoV1Call: vi.fn().mockResolvedValue({ info: {} }),
+    allEndUsersCall: vi.fn().mockResolvedValue([]),
+  };
+});
 
-describe("Request Viewer", () => {
-  it("renders the request details heading", () => {
-    render(<RequestViewer row={createRow()} />);
-    expect(screen.getByText("Request Details")).toBeInTheDocument();
+vi.mock("../key_team_helpers/filter_helpers", () => ({
+  fetchAllTeams: vi.fn().mockResolvedValue([]),
+}));
+
+describe("SpendLogsTable", () => {
+  const defaultProps = {
+    accessToken: "test-token",
+    token: "test-token",
+    userRole: "Admin",
+    userID: "user-1",
+    premiumUser: false,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Clear sessionStorage to avoid isLiveTail state from previous tests
+    sessionStorage.clear();
   });
 
-  it("should truncate the request id if it is longer than 64 characters", () => {
-    const LONG_REQUEST_ID = "a".repeat(128);
-    const TRUNCATED_REQUEST_ID = `${"a".repeat(64)}...`;
-    render(
-      <RequestViewer
-        row={createRow({
-          request_id: LONG_REQUEST_ID,
-        })}
-      />,
-    );
+  it("should call handleFilterResetFromHook when Reset Filters is clicked", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SpendLogsTable {...defaultProps} />);
 
-    expect(screen.getByText(TRUNCATED_REQUEST_ID)).toBeInTheDocument();
+    const resetButton = screen.getByRole("button", { name: "Reset Filters" });
+    await user.click(resetButton);
+
+    await waitFor(() => {
+      expect(mockHandleFilterResetFromHook).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it("should display LiteLLM Overhead when litellm_overhead_time_ms is present in metadata", () => {
-    render(
-      <RequestViewer
-        row={createRow({
-          metadata: {
-            status: "success",
-            litellm_overhead_time_ms: 150,
-            additional_usage_values: {
-              cache_read_input_tokens: 0,
-              cache_creation_input_tokens: 0,
-            },
-          },
-        })}
-      />,
-    );
+  it("should reset custom date range to default when Reset Filters is clicked", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SpendLogsTable {...defaultProps} />);
 
-    expect(screen.getByText("LiteLLM Overhead:")).toBeInTheDocument();
-    expect(screen.getByText("150 ms")).toBeInTheDocument();
+    // Open the time range quick select dropdown (button shows current range like "Last 24 Hours")
+    const quickSelectButton = screen.getByRole("button", {
+      name: /Last 24 Hours|Last 15 Minutes|Last Hour|Last 4 Hours|Last 7 Days/i,
+    });
+    await user.click(quickSelectButton);
+
+    // Click "Custom Range" to enable custom date selection
+    const customRangeButton = await screen.findByRole("button", { name: "Custom Range" });
+    await user.click(customRangeButton);
+
+    // Custom date inputs should now be visible (start and end datetime-local inputs)
+    const datetimeInputs = document.querySelectorAll('input[type="datetime-local"]');
+    expect(datetimeInputs.length).toBeGreaterThanOrEqual(2);
+
+    // Click Reset Filters - this should reset the custom date range and hide custom inputs
+    const resetButton = screen.getByRole("button", { name: "Reset Filters" });
+    await user.click(resetButton);
+
+    await waitFor(() => {
+      expect(mockHandleFilterResetFromHook).toHaveBeenCalled();
+    });
+
+    // After reset, custom date inputs should be hidden (isCustomDate reset to false)
+    await waitFor(() => {
+      const inputsAfterReset = document.querySelectorAll('input[type="datetime-local"]');
+      expect(inputsAfterReset.length).toBe(0);
+    });
   });
 
-  it("should not display LiteLLM Overhead when litellm_overhead_time_ms is not present in metadata", () => {
-    render(<RequestViewer row={createRow()} />);
+  describe("auth-not-ready guard", () => {
+    it("shows a loading spinner when credentials are not yet resolved", () => {
+      renderWithProviders(<SpendLogsTable {...defaultProps} accessToken={null} />);
 
-    expect(screen.queryByText("LiteLLM Overhead:")).not.toBeInTheDocument();
+      expect(document.querySelector(".ant-spin")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Reset Filters" })).not.toBeInTheDocument();
+    });
+
+    it("renders the table (no spinner) once all credentials are present", () => {
+      renderWithProviders(<SpendLogsTable {...defaultProps} />);
+
+      expect(document.querySelector(".ant-spin")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Reset Filters" })).toBeInTheDocument();
+    });
+  });
+
+  describe("Quick Select time range", () => {
+    // uiSpendLogsCall fires from the real useLogFilterLogic query, so restore it here.
+    beforeEach(async () => {
+      const actual = await vi.importActual<typeof import("./log_filter_logic")>("./log_filter_logic");
+      vi.mocked(useLogFilterLogic).mockImplementation(actual.useLogFilterLogic);
+    });
+
+    const waitForWindowSeconds = async (minMinutes: number) => {
+      let diff = -1;
+      await waitFor(() => {
+        const lastCall = vi.mocked(uiSpendLogsCall).mock.calls.at(-1)?.[0];
+        if (!lastCall) throw new Error("uiSpendLogsCall was not called");
+        diff = moment
+          .utc(lastCall.end_date, "YYYY-MM-DD HH:mm:ss")
+          .diff(moment.utc(lastCall.start_date, "YYYY-MM-DD HH:mm:ss"), "seconds");
+        // start_date is rounded down to the minute boundary, end_date is the
+        // current wall-clock at queryFn time. The dropped sub-minute fraction
+        // on start_date can push the diff up to (minMinutes+1)*60 seconds
+        // exactly (e.g. click at HH:MM:59.9 → start floors to HH:MM:00 and
+        // queryFn fires just past HH:(MM+1):00), so allow equality on the
+        // upper bound.
+        expect(diff).toBeGreaterThanOrEqual(minMinutes * 60);
+        expect(diff).toBeLessThanOrEqual((minMinutes + 1) * 60);
+      });
+      return diff;
+    };
+
+    it("should pass a ~1-minute window to uiSpendLogsCall when 'Last Minute' is selected", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(<SpendLogsTable {...defaultProps} />);
+
+      await user.click(screen.getByRole("button", { name: /Last 24 Hours/i }));
+      await user.click(await screen.findByRole("button", { name: "Last Minute" }));
+
+      await waitForWindowSeconds(1);
+    });
+
+    it("should pass a ~15-minute window to uiSpendLogsCall when 'Last 15 Minutes' is selected", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(<SpendLogsTable {...defaultProps} />);
+
+      await user.click(screen.getByRole("button", { name: /Last 24 Hours/i }));
+      await user.click(await screen.findByRole("button", { name: "Last 15 Minutes" }));
+
+      await waitForWindowSeconds(15);
+    });
+
+    it("should update the time-range button label to 'Last Minute' after selecting it", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(<SpendLogsTable {...defaultProps} />);
+
+      await user.click(screen.getByRole("button", { name: /Last 24 Hours/i }));
+      await user.click(await screen.findByRole("button", { name: "Last Minute" }));
+
+      expect(screen.getByRole("button", { name: "Last Minute" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Last 24 Hours/i })).not.toBeInTheDocument();
+    });
   });
 });

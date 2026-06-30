@@ -1,3 +1,5 @@
+import { MCPEnvVar, MCPEnvVarScope } from "./types";
+
 export const extractMCPToken = (url: string): { token: string | null; baseUrl: string } => {
   try {
     const mcpIndex = url.indexOf("/mcp/");
@@ -47,7 +49,31 @@ export const validateMCPServerUrl = (value: string) => {
 };
 
 export const validateMCPServerName = (value: string) => {
-  return value && value.includes("-")
-    ? Promise.reject("Server name cannot contain '-' (hyphen). Please use '_' (underscore) instead.")
+  return value && (value.includes("-") || value.includes(" "))
+    ? Promise.reject("Cannot contain '-' (hyphen) or spaces. Please use '_' (underscore) instead.")
     : Promise.resolve();
+};
+
+// Normalize the env_vars form list into the payload shape the backend expects.
+// Drops empty rows, invalid identifiers, and duplicate names; user-scoped entries never carry a value.
+export const normalizeEnvVars = (list: unknown): MCPEnvVar[] => {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set<string>();
+  const out: MCPEnvVar[] = [];
+  for (const entry of list) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    const name = String(record.name ?? "").trim();
+    if (!name || seen.has(name)) continue;
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) continue;
+    const scope: MCPEnvVarScope = record.scope === "user" ? "user" : "global";
+    out.push({
+      name,
+      value: scope === "user" ? "" : String(record.value ?? ""),
+      scope,
+      description: (record.description as string | undefined) || undefined,
+    });
+    seen.add(name);
+  }
+  return out;
 };

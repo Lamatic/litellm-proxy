@@ -2,8 +2,10 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 import httpx
 
-from litellm.anthropic_beta_headers_manager import (
-    update_headers_with_filtered_beta,
+from litellm.constants import (
+    DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET,
+    DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET,
+    DEFAULT_REASONING_EFFORT_XHIGH_THINKING_BUDGET,
 )
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
 from litellm.litellm_core_utils.litellm_logging import verbose_logger
@@ -11,6 +13,7 @@ from litellm.llms.base_llm.anthropic_messages.transformation import (
     BaseAnthropicMessagesConfig,
 )
 from litellm.types.llms.anthropic import (
+    ANTHROPIC_ADVISOR_TOOL_TYPE,
     ANTHROPIC_BETA_HEADER_VALUES,
     AnthropicMessagesRequest,
 )
@@ -24,9 +27,9 @@ from ...common_utils import (
     AnthropicError,
     AnthropicModelInfo,
     optionally_handle_anthropic_oauth,
+    strip_advisor_blocks_from_messages,
 )
 
-DEFAULT_ANTHROPIC_API_BASE = "https://api.anthropic.com"
 DEFAULT_ANTHROPIC_API_VERSION = "2023-06-01"
 
 
@@ -46,10 +49,86 @@ class AnthropicMessagesConfig(BaseAnthropicMessagesConfig):
             "thinking",
             "context_management",
             "output_format",
+            "inference_geo",
+            "speed",
             "output_config",
+            "reasoning_effort",
             # TODO: Add Anthropic `metadata` support
             # "metadata",
         ]
+
+    def _remove_scope_from_cache_control(self, anthropic_messages_request: Dict) -> None:
+        """
+        Remove `scope` field from cache_control blocks.
+
+        Some providers (Vertex AI, Azure AI Foundry) do not support the `scope`
+        field in cache_control (e.g. "global" for cross-request caching).
+        Processes both `system` and `messages` content blocks.
+        """
+
+        def _sanitize(cache_control: Any) -> None:
+            if isinstance(cache_control, dict):
+                cache_control.pop("scope", None)
+
+        def _process_content_list(content: list) -> None:
+            for item in content:
+                if isinstance(item, dict) and "cache_control" in item:
+                    _sanitize(item["cache_control"])
+
+        if "system" in anthropic_messages_request:
+            system = anthropic_messages_request["system"]
+            if isinstance(system, list):
+                _process_content_list(system)
+
+        if "messages" in anthropic_messages_request:
+            for message in anthropic_messages_request["messages"]:
+                if isinstance(message, dict) and "content" in message:
+                    content = message["content"]
+                    if isinstance(content, list):
+                        _process_content_list(content)
+
+    def should_strip_billing_metadata(self) -> bool:
+        """
+        Whether to drop x-anthropic-billing-header system blocks before sending upstream.
+
+        The first-party Anthropic API uses these blocks for Claude Code attribution, so the
+        base config keeps them. Providers that reject them override this to True.
+        """
+        return False
+
+    @staticmethod
+    def _filter_billing_headers_from_system(system_param):
+        """
+        Filter out x-anthropic-billing-header metadata from system parameter.
+
+        Args:
+            system_param: Can be a string or a list of system message content blocks
+
+        Returns:
+            Filtered system parameter (string or list), or None if all content was filtered
+        """
+        if isinstance(system_param, str):
+            # If it's a string and starts with billing header, filter it out
+            if system_param.startswith("x-anthropic-billing-header:"):
+                return None
+            return system_param
+        elif isinstance(system_param, list):
+            # Filter list of system content blocks
+            filtered_list = []
+            for content_block in system_param:
+                if isinstance(content_block, dict):
+                    text = content_block.get("text", "")
+                    content_type = content_block.get("type", "")
+                    # Skip text blocks that start with billing header
+                    if content_type == "text" and text.startswith("x-anthropic-billing-header:"):
+                        continue
+                    filtered_list.append(content_block)
+                else:
+                    # Keep non-dict items as-is
+                    filtered_list.append(content_block)
+            return filtered_list if len(filtered_list) > 0 else None
+        else:
+            return system_param
 
     def get_complete_url(
         self,
@@ -60,7 +139,7 @@ class AnthropicMessagesConfig(BaseAnthropicMessagesConfig):
         litellm_params: dict,
         stream: Optional[bool] = None,
     ) -> str:
-        api_base = api_base or DEFAULT_ANTHROPIC_API_BASE
+        api_base = AnthropicModelInfo.get_api_base(api_base) or "https://api.anthropic.com"
         if not api_base.endswith("/v1/messages"):
             api_base = f"{api_base}/v1/messages"
         return api_base
@@ -75,15 +154,13 @@ class AnthropicMessagesConfig(BaseAnthropicMessagesConfig):
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
     ) -> Tuple[dict, Optional[str]]:
-        import os
-
         # Check for Anthropic OAuth token in Authorization header
         headers, api_key = optionally_handle_anthropic_oauth(headers=headers, api_key=api_key)
-        if api_key is None:
-            api_key = os.getenv("ANTHROPIC_API_KEY")
 
-        if "x-api-key" not in headers and api_key:
-            headers["x-api-key"] = api_key
+        if "x-api-key" not in headers and "authorization" not in headers:
+            auth_header = AnthropicModelInfo.get_auth_header(api_key)
+            if auth_header is not None:
+                headers.update(auth_header)
         if "anthropic-version" not in headers:
             headers["anthropic-version"] = DEFAULT_ANTHROPIC_API_VERSION
         if "content-type" not in headers:
@@ -94,12 +171,87 @@ class AnthropicMessagesConfig(BaseAnthropicMessagesConfig):
             optional_params=optional_params,
         )
 
-        headers = update_headers_with_filtered_beta(
-            headers=headers,
-            provider="anthropic",
+        return headers, api_base
+
+    @staticmethod
+    def _translate_reasoning_effort_to_anthropic(model: str, optional_params: Dict) -> None:
+        """Map OpenAI-style ``reasoning_effort`` to native Anthropic params.
+
+        Caller-supplied ``thinking`` / ``output_config`` win over the alias.
+        ``effort='none'`` clears both. Invalid efforts raise a 400.
+        """
+        from litellm.exceptions import BadRequestError as _BadRequestError
+        from litellm.llms.anthropic.chat.transformation import (
+            REASONING_EFFORT_TO_OUTPUT_CONFIG_EFFORT,
+            AnthropicConfig,
         )
 
-        return headers, api_base
+        reasoning_effort = optional_params.pop("reasoning_effort", None)
+        if not isinstance(reasoning_effort, str):
+            return
+
+        try:
+            mapped_thinking = AnthropicConfig._map_reasoning_effort(reasoning_effort=reasoning_effort, model=model)
+        except _BadRequestError as e:
+            raise AnthropicError(message=str(e.message), status_code=400)
+
+        if mapped_thinking is None:
+            optional_params.pop("thinking", None)
+            optional_params.pop("output_config", None)
+            return
+
+        optional_params.setdefault("thinking", mapped_thinking)
+        if AnthropicModelInfo._is_adaptive_thinking_model(model):
+            mapped_effort = REASONING_EFFORT_TO_OUTPUT_CONFIG_EFFORT.get(reasoning_effort)
+            if mapped_effort is None:
+                raise AnthropicError(
+                    message=(
+                        f"Invalid reasoning_effort: {reasoning_effort!r}. "
+                        f"Must be one of: 'minimal', 'low', 'medium', 'high', "
+                        f"'xhigh', 'max', 'none'"
+                    ),
+                    status_code=400,
+                )
+            gate_error = AnthropicConfig._validate_effort_for_model(model, mapped_effort)
+            if gate_error is not None:
+                raise AnthropicError(message=gate_error, status_code=400)
+            existing_output_config = optional_params.get("output_config")
+            if not isinstance(existing_output_config, dict):
+                existing_output_config = {}
+            existing_output_config.setdefault("effort", mapped_effort)
+            optional_params["output_config"] = existing_output_config
+
+    @staticmethod
+    def _translate_legacy_thinking_for_adaptive_model(model: str, optional_params: Dict) -> None:
+        """Translate legacy ``thinking.type=enabled`` to adaptive for 4.6/4.7.
+        Caller-provided ``output_config.effort`` is never overridden.
+        """
+        from litellm.llms.anthropic.chat.transformation import AnthropicConfig
+
+        if not AnthropicModelInfo._is_adaptive_thinking_model(model):
+            return
+        thinking = optional_params.get("thinking")
+        if not isinstance(thinking, dict) or thinking.get("type") != "enabled":
+            return
+
+        budget = int(thinking.get("budget_tokens") or 0)
+        if budget >= DEFAULT_REASONING_EFFORT_XHIGH_THINKING_BUDGET and (
+            AnthropicConfig._supports_effort_level(model, "xhigh")
+        ):
+            effort = "xhigh"
+        elif budget >= DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET:
+            effort = "high"
+        elif budget >= DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET:
+            effort = "medium"
+        else:
+            effort = "low"
+
+        optional_params["thinking"] = {"type": "adaptive"}
+        existing_output_config = optional_params.get("output_config")
+        if not isinstance(existing_output_config, dict):
+            existing_output_config = {}
+        existing_output_config.setdefault("effort", effort)
+        optional_params["output_config"] = existing_output_config
 
     def transform_anthropic_messages_request(
         self,
@@ -121,8 +273,49 @@ class AnthropicMessagesConfig(BaseAnthropicMessagesConfig):
                 message="max_tokens is required for Anthropic /v1/messages API",
                 status_code=400,
             )
+
+        self._translate_reasoning_effort_to_anthropic(
+            model=model,
+            optional_params=anthropic_messages_optional_request_params,
+        )
+
+        self._translate_legacy_thinking_for_adaptive_model(
+            model=model,
+            optional_params=anthropic_messages_optional_request_params,
+        )
+
+        system_param = anthropic_messages_optional_request_params.get("system")
+        if self.should_strip_billing_metadata() and system_param is not None:
+            filtered_system = self._filter_billing_headers_from_system(system_param)
+            if filtered_system is not None and len(filtered_system) > 0:
+                anthropic_messages_optional_request_params["system"] = filtered_system
+            else:
+                anthropic_messages_optional_request_params.pop("system", None)
+
+        # Transform context_management from OpenAI format to Anthropic format if needed
+        context_management_param = anthropic_messages_optional_request_params.get("context_management")
+        if context_management_param is not None:
+            from litellm.llms.anthropic.chat.transformation import AnthropicConfig
+
+            transformed_context_management = AnthropicConfig.map_openai_context_management_to_anthropic(
+                context_management_param
+            )
+            if transformed_context_management is not None:
+                anthropic_messages_optional_request_params["context_management"] = transformed_context_management
+
         ####### get required params for all anthropic messages requests ######
-        verbose_logger.debug(f"TRANSFORMATION DEBUG - Messages: {messages}")
+        # Lazy %s: the f-string previously stringified the entire messages
+        # payload on every request regardless of log level (a full scan of the
+        # request body on the hot path). Defer it to when DEBUG is enabled.
+        verbose_logger.debug("TRANSFORMATION DEBUG - Messages: %s", messages)
+
+        # Auto-strip advisor blocks from history if advisor tool is absent.
+        # Prevents Anthropic 400: advisor_tool_result in history requires advisor tool.
+        _tools = anthropic_messages_optional_request_params.get("tools") or []
+        _has_advisor = any(isinstance(t, dict) and t.get("type") == ANTHROPIC_ADVISOR_TOOL_TYPE for t in _tools)
+        if not _has_advisor:
+            messages = strip_advisor_blocks_from_messages(messages)  # type: ignore[assignment]
+
         anthropic_messages_request: AnthropicMessagesRequest = AnthropicMessagesRequest(
             messages=messages,
             max_tokens=max_tokens,
@@ -143,9 +336,7 @@ class AnthropicMessagesConfig(BaseAnthropicMessagesConfig):
         try:
             raw_response_json = raw_response.json()
         except Exception:
-            raise AnthropicError(
-                message=raw_response.text, status_code=raw_response.status_code
-            )
+            raise AnthropicError(message=raw_response.text, status_code=raw_response.status_code)
         return AnthropicMessagesResponse(**raw_response_json)
 
     def get_async_streaming_response_iterator(
@@ -184,10 +375,11 @@ class AnthropicMessagesConfig(BaseAnthropicMessagesConfig):
         - context_management: adds 'context-management-2025-06-27'
         - tool_search: adds provider-specific tool search header
         - output_format: adds 'structured-outputs-2025-11-13'
+        - speed: adds 'fast-mode-2026-02-01'
 
         Args:
             headers: Request headers dict
-            optional_params: Optional parameters including tools, context_management, output_format
+            optional_params: Optional parameters including tools, context_management, output_format, speed
             custom_llm_provider: Provider name for looking up correct tool search header
         """
         beta_values: set = set()
@@ -204,25 +396,42 @@ class AnthropicMessagesConfig(BaseAnthropicMessagesConfig):
             edits = context_management_param.get("edits", [])
             has_compact = False
             has_other = False
-            
+
             for edit in edits:
                 edit_type = edit.get("type", "")
                 if edit_type == "compact_20260112":
                     has_compact = True
                 else:
                     has_other = True
-            
+
             # Add compact header if any compact edits exist
             if has_compact:
                 beta_values.add(ANTHROPIC_BETA_HEADER_VALUES.COMPACT_2026_01_12.value)
-            
+
             # Add context management header if any other edits exist
             if has_other:
                 beta_values.add(ANTHROPIC_BETA_HEADER_VALUES.CONTEXT_MANAGEMENT_2025_06_27.value)
 
-        # Check for structured outputs
-        if optional_params.get("output_format") is not None:
+        # Check for structured outputs. Anthropic's newer request shape nests
+        # the schema under output_config.format; the older top-level
+        # output_format remains supported for backwards compatibility.
+        output_config = optional_params.get("output_config")
+        if optional_params.get("output_format") is not None or (
+            isinstance(output_config, dict) and output_config.get("format") is not None
+        ):
             beta_values.add(ANTHROPIC_BETA_HEADER_VALUES.STRUCTURED_OUTPUT_2025_09_25.value)
+
+        # Check for fast mode
+        if optional_params.get("speed") == "fast":
+            beta_values.add(ANTHROPIC_BETA_HEADER_VALUES.FAST_MODE_2026_02_01.value)
+
+        # Check for advisor tool
+        tools = optional_params.get("tools")
+        if tools:
+            for tool in tools:
+                if isinstance(tool, dict) and tool.get("type") == ANTHROPIC_ADVISOR_TOOL_TYPE:
+                    beta_values.add(ANTHROPIC_BETA_HEADER_VALUES.ADVISOR_TOOL_2026_03_01.value)
+                    break
 
         # Check for tool search tools
         tools = optional_params.get("tools")

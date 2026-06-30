@@ -6,13 +6,15 @@
 export interface FieldConfig {
   name: string;
   label: string;
-  type: "text" | "textarea" | "url" | "switch" | "list";
+  type: "text" | "textarea" | "url" | "switch" | "list" | "select";
   required?: boolean;
   tooltip?: string;
   placeholder?: string;
   defaultValue?: any;
   rows?: number;
   validation?: any[];
+  options?: string[];
+  helpText?: string;
 }
 
 export interface SectionConfig {
@@ -29,6 +31,7 @@ export const AGENT_FORM_CONFIG: {
   optional: SectionConfig;
   litellm: SectionConfig;
   cost: SectionConfig;
+  tracing: SectionConfig;
 } = {
   basic: {
     key: "basic",
@@ -54,9 +57,9 @@ export const AGENT_FORM_CONFIG: {
         name: "url",
         label: "URL",
         type: "url",
-        required: true,
+        required: false,
         placeholder: "http://localhost:9999/",
-        tooltip: "Base URL where the agent is hosted",
+        tooltip: "Base URL where the agent is hosted (optional)",
       },
       {
         name: "version",
@@ -68,9 +71,13 @@ export const AGENT_FORM_CONFIG: {
       {
         name: "protocolVersion",
         label: "Protocol Version",
-        type: "text",
-        placeholder: "1.0",
+        type: "select",
+        options: ["1.0", "0.3"],
         defaultValue: "1.0",
+        tooltip:
+          "The A2A protocol version LiteLLM serves to clients for this agent. LiteLLM converts the upstream agent's responses to this version, so clients always see the version you pick here regardless of the original agent's version.",
+        helpText:
+          "LiteLLM serves this version to clients and converts the upstream agent's responses to match it, regardless of the original agent's version.",
       },
     ],
   },
@@ -174,6 +181,19 @@ export const AGENT_FORM_CONFIG: {
       },
     ],
   },
+  tracing: {
+    key: "tracing",
+    title: "Tracing",
+    fields: [
+      {
+        name: "enable_tracing",
+        label: "Enable Tracing",
+        type: "switch",
+        defaultValue: false,
+        tooltip: "Enable request tracing for this agent",
+      },
+    ],
+  },
 };
 
 export const SKILL_FIELD_CONFIG = {
@@ -198,14 +218,14 @@ export const SKILL_FIELD_CONFIG = {
   },
   tags: {
     name: "tags",
-    label: "Tags (comma-separated)",
+    label: "Tags",
     required: true,
-    placeholder: "e.g., hello world, greeting",
+    placeholder: "Type a tag and press Enter",
   },
   examples: {
     name: "examples",
-    label: "Examples (comma-separated)",
-    placeholder: "e.g., hi, hello world",
+    label: "Examples",
+    placeholder: "Type an example and press Enter",
   },
 };
 
@@ -237,9 +257,9 @@ export const buildAgentDataFromForm = (values: any, existingAgent?: any) => {
     agent_name: values.agent_name,
     agent_card_params: {
       protocolVersion: values.protocolVersion || "1.0",
-      name: values.name,
-      description: values.description,
-      url: values.url,
+      name: values.name || values.agent_name,
+      description: values.description || "",
+      url: values.url || "",
       version: values.version || "1.0.0",
       defaultInputModes: existingAgent?.agent_card_params?.defaultInputModes || ["text"],
       defaultOutputModes: existingAgent?.agent_card_params?.defaultOutputModes || ["text"],
@@ -267,6 +287,27 @@ export const buildAgentDataFromForm = (values: any, existingAgent?: any) => {
 
   if (Object.keys(params).length > 0) {
     agentData.litellm_params = params;
+  }
+
+  if (values.tpm_limit != null) agentData.tpm_limit = values.tpm_limit;
+  if (values.rpm_limit != null) agentData.rpm_limit = values.rpm_limit;
+  if (values.session_tpm_limit != null) agentData.session_tpm_limit = values.session_tpm_limit;
+  if (values.session_rpm_limit != null) agentData.session_rpm_limit = values.session_rpm_limit;
+  // static_headers: convert [{header, value}, ...] → {header: value, ...}
+  if (Array.isArray(values.static_headers) && values.static_headers.length > 0) {
+    const staticHeaders: Record<string, string> = {};
+    values.static_headers.forEach((entry: { header?: string; value?: string }) => {
+      const key = entry?.header?.trim();
+      if (key) staticHeaders[key] = entry?.value ?? "";
+    });
+    if (Object.keys(staticHeaders).length > 0) {
+      agentData.static_headers = staticHeaders;
+    }
+  }
+
+  // extra_headers: already an array of strings from Select tags
+  if (Array.isArray(values.extra_headers) && values.extra_headers.length > 0) {
+    agentData.extra_headers = values.extra_headers;
   }
 
   return agentData;
@@ -302,5 +343,18 @@ export const parseAgentForForm = (agent: any) => {
     cost_per_query: agent.litellm_params?.cost_per_query,
     input_cost_per_token: agent.litellm_params?.input_cost_per_token,
     output_cost_per_token: agent.litellm_params?.output_cost_per_token,
+    tpm_limit: agent.tpm_limit,
+    rpm_limit: agent.rpm_limit,
+    session_tpm_limit: agent.session_tpm_limit,
+    session_rpm_limit: agent.session_rpm_limit,
+    // static_headers: {key: value} → [{header, value}, ...]
+    static_headers: agent.static_headers
+      ? Object.entries(agent.static_headers as Record<string, string>).map(([header, value]) => ({
+          header,
+          value,
+        }))
+      : [],
+    // extra_headers: already an array of strings
+    extra_headers: agent.extra_headers ?? [],
   };
 };

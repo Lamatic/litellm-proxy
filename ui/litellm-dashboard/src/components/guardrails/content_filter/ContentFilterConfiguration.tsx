@@ -1,7 +1,6 @@
 import React, { useState } from "react";
-import { Typography, Space, Upload, Card } from "antd";
+import { Typography, Space, Upload, Card, Button } from "antd";
 import { PlusOutlined, UploadOutlined } from "@ant-design/icons";
-import { Button } from "@tremor/react";
 import { validateBlockedWordsFile } from "../../networking";
 import NotificationsManager from "../../molecules/notifications_manager";
 import PatternModal from "./PatternModal";
@@ -10,6 +9,7 @@ import KeywordModal from "./KeywordModal";
 import PatternTable from "./PatternTable";
 import KeywordTable from "./KeywordTable";
 import ContentCategoryConfiguration from "./ContentCategoryConfiguration";
+import CompetitorIntentConfiguration, { CompetitorIntentConfig } from "./CompetitorIntentConfiguration";
 
 const { Title, Text } = Typography;
 
@@ -64,12 +64,17 @@ interface ContentFilterConfigurationProps {
   onBlockedWordUpdate: (id: string, field: string, value: any) => void;
   onFileUpload?: (content: string) => void;
   accessToken: string | null;
-  showStep?: "patterns" | "keywords" | "categories";
+  showStep?: "patterns" | "keywords" | "categories" | "competitor_intent";
   contentCategories?: ContentCategory[];
   selectedContentCategories?: SelectedContentCategory[];
   onContentCategoryAdd?: (category: SelectedContentCategory) => void;
   onContentCategoryRemove?: (id: string) => void;
   onContentCategoryUpdate?: (id: string, field: string, value: any) => void;
+  pendingCategorySelection?: string;
+  onPendingCategorySelectionChange?: (value: string) => void;
+  competitorIntentEnabled?: boolean;
+  competitorIntentConfig?: CompetitorIntentConfig | null;
+  onCompetitorIntentChange?: (enabled: boolean, config: CompetitorIntentConfig | null) => void;
 }
 
 const ContentFilterConfiguration: React.FC<ContentFilterConfigurationProps> = ({
@@ -91,6 +96,11 @@ const ContentFilterConfiguration: React.FC<ContentFilterConfigurationProps> = ({
   onContentCategoryAdd,
   onContentCategoryRemove,
   onContentCategoryUpdate,
+  pendingCategorySelection,
+  onPendingCategorySelectionChange,
+  competitorIntentEnabled = false,
+  competitorIntentConfig = null,
+  onCompetitorIntentChange,
 }) => {
   const [patternModalVisible, setPatternModalVisible] = useState(false);
   const [keywordModalVisible, setKeywordModalVisible] = useState(false);
@@ -170,7 +180,7 @@ const ContentFilterConfiguration: React.FC<ContentFilterConfigurationProps> = ({
     setUploadValidating(true);
     try {
       const content = await file.text();
-      
+
       if (accessToken) {
         const result = await validateBlockedWordsFile(accessToken, content);
         if (result.valid) {
@@ -194,13 +204,15 @@ const ContentFilterConfiguration: React.FC<ContentFilterConfigurationProps> = ({
   const showPatterns = !showStep || showStep === "patterns";
   const showKeywords = !showStep || showStep === "keywords";
   const showCategories = !showStep || showStep === "categories";
+  const showCompetitorIntent = !showStep || showStep === "competitor_intent" || showStep === "categories";
 
   return (
     <div className="space-y-6">
       {!showStep && (
         <div>
           <Text type="secondary">
-            Configure patterns, keywords, and content categories to detect and filter sensitive information in requests and responses.
+            Configure patterns, keywords, and content categories to detect and filter sensitive information in requests
+            and responses.
           </Text>
         </div>
       )}
@@ -221,19 +233,15 @@ const ContentFilterConfiguration: React.FC<ContentFilterConfigurationProps> = ({
         >
           <div style={{ marginBottom: 16 }}>
             <Space>
-              <Button type="button" onClick={() => setPatternModalVisible(true)} icon={PlusOutlined}>
+              <Button type="primary" onClick={() => setPatternModalVisible(true)} icon={<PlusOutlined />}>
                 Add prebuilt pattern
               </Button>
-              <Button type="button" onClick={() => setCustomPatternModalVisible(true)} variant="secondary" icon={PlusOutlined}>
+              <Button onClick={() => setCustomPatternModalVisible(true)} icon={<PlusOutlined />}>
                 Add custom regex
               </Button>
             </Space>
           </div>
-          <PatternTable
-            patterns={selectedPatterns}
-            onActionChange={onPatternActionChange}
-            onRemove={onPatternRemove}
-          />
+          <PatternTable patterns={selectedPatterns} onActionChange={onPatternActionChange} onRemove={onPatternRemove} />
         </Card>
       )}
 
@@ -253,34 +261,45 @@ const ContentFilterConfiguration: React.FC<ContentFilterConfigurationProps> = ({
         >
           <div style={{ marginBottom: 16 }}>
             <Space>
-              <Button type="button" onClick={() => setKeywordModalVisible(true)} icon={PlusOutlined}>
+              <Button type="primary" onClick={() => setKeywordModalVisible(true)} icon={<PlusOutlined />}>
                 Add keyword
               </Button>
               <Upload beforeUpload={handleFileUpload} accept=".yaml,.yml" showUploadList={false}>
-                <Button type="button" variant="secondary" icon={UploadOutlined} loading={uploadValidating}>
+                <Button icon={<UploadOutlined />} loading={uploadValidating}>
                   Upload YAML file
                 </Button>
               </Upload>
             </Space>
           </div>
-          <KeywordTable
-            keywords={blockedWords}
-            onActionChange={onBlockedWordUpdate}
-            onRemove={onBlockedWordRemove}
-          />
+          <KeywordTable keywords={blockedWords} onActionChange={onBlockedWordUpdate} onRemove={onBlockedWordRemove} />
         </Card>
       )}
 
-      {showCategories && contentCategories.length > 0 && onContentCategoryAdd && onContentCategoryRemove && onContentCategoryUpdate && (
-        <ContentCategoryConfiguration
-          availableCategories={contentCategories}
-          selectedCategories={selectedContentCategories}
-          onCategoryAdd={onContentCategoryAdd}
-          onCategoryRemove={onContentCategoryRemove}
-          onCategoryUpdate={onContentCategoryUpdate}
+      {showCompetitorIntent && onCompetitorIntentChange && (
+        <CompetitorIntentConfiguration
+          enabled={competitorIntentEnabled}
+          config={competitorIntentConfig}
+          onChange={onCompetitorIntentChange}
           accessToken={accessToken}
         />
       )}
+
+      {showCategories &&
+        contentCategories.length > 0 &&
+        onContentCategoryAdd &&
+        onContentCategoryRemove &&
+        onContentCategoryUpdate && (
+          <ContentCategoryConfiguration
+            availableCategories={contentCategories}
+            selectedCategories={selectedContentCategories}
+            onCategoryAdd={onContentCategoryAdd}
+            onCategoryRemove={onContentCategoryRemove}
+            onCategoryUpdate={onContentCategoryUpdate}
+            accessToken={accessToken}
+            pendingSelection={pendingCategorySelection}
+            onPendingSelectionChange={onPendingCategorySelectionChange}
+          />
+        )}
 
       <PatternModal
         visible={patternModalVisible}

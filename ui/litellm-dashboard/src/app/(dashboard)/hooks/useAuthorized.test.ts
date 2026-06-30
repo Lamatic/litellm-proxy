@@ -8,13 +8,22 @@ import useAuthorized from "./useAuthorized";
 // Unmock useAuthorized to test the actual implementation
 vi.unmock("@/app/(dashboard)/hooks/useAuthorized");
 
-const { replaceMock, clearTokenCookiesMock, getProxyBaseUrlMock, getUiConfigMock, decodeTokenMock, checkTokenValidityMock } = vi.hoisted(() => ({
+const {
+  replaceMock,
+  clearTokenCookiesMock,
+  getProxyBaseUrlMock,
+  getUiConfigMock,
+  decodeTokenMock,
+  checkTokenValidityMock,
+  buildLoginUrlWithReturnMock,
+} = vi.hoisted(() => ({
   replaceMock: vi.fn(),
   clearTokenCookiesMock: vi.fn(),
   getProxyBaseUrlMock: vi.fn(() => "http://proxy.example"),
   getUiConfigMock: vi.fn(),
   decodeTokenMock: vi.fn(),
   checkTokenValidityMock: vi.fn(),
+  buildLoginUrlWithReturnMock: vi.fn((baseUrl: string) => baseUrl),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -49,6 +58,14 @@ vi.mock("@/utils/jwtUtils", async (importOriginal) => {
   };
 });
 
+vi.mock("@/utils/returnUrlUtils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/utils/returnUrlUtils")>();
+  return {
+    ...actual,
+    buildLoginUrlWithReturn: buildLoginUrlWithReturnMock,
+    storeReturnUrl: vi.fn(),
+  };
+});
 const createQueryClient = () =>
   new QueryClient({
     defaultOptions: {
@@ -81,6 +98,7 @@ describe("useAuthorized", () => {
     getUiConfigMock.mockReset();
     decodeTokenMock.mockReset();
     checkTokenValidityMock.mockReset();
+    buildLoginUrlWithReturnMock.mockClear();
     clearCookie();
   });
 
@@ -90,8 +108,9 @@ describe("useAuthorized", () => {
       proxy_base_url: null,
       auto_redirect_to_sso: false,
       admin_ui_disabled: false,
+      sso_configured: false,
     });
-    
+
     const decodedPayload = {
       key: "api-key-123",
       user_id: "user-1",
@@ -101,7 +120,7 @@ describe("useAuthorized", () => {
       disabled_non_admin_personal_key_creation: false,
       login_method: "username_password",
     };
-    
+
     decodeTokenMock.mockReturnValue(decodedPayload);
     checkTokenValidityMock.mockReturnValue(true);
 
@@ -131,6 +150,7 @@ describe("useAuthorized", () => {
       proxy_base_url: null,
       auto_redirect_to_sso: false,
       admin_ui_disabled: false,
+      sso_configured: false,
     });
 
     decodeTokenMock.mockReturnValue(null);
@@ -155,6 +175,7 @@ describe("useAuthorized", () => {
       proxy_base_url: null,
       auto_redirect_to_sso: false,
       admin_ui_disabled: true,
+      sso_configured: false,
     });
 
     const decodedPayload = {
@@ -190,6 +211,7 @@ describe("useAuthorized", () => {
       proxy_base_url: null,
       auto_redirect_to_sso: false,
       admin_ui_disabled: false,
+      sso_configured: false,
     });
 
     decodeTokenMock.mockReturnValue(null);
@@ -212,6 +234,7 @@ describe("useAuthorized", () => {
       proxy_base_url: null,
       auto_redirect_to_sso: false,
       admin_ui_disabled: false,
+      sso_configured: false,
     });
 
     const decodedPayload = {

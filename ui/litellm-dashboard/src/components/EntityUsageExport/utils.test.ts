@@ -11,6 +11,7 @@ import {
   getEntityBreakdown,
   handleExportCSV,
   handleExportJSON,
+  resolveEntities,
 } from "./utils";
 
 vi.mock("@/utils/dataUtils", () => ({
@@ -29,13 +30,17 @@ vi.mock("papaparse", () => ({
 }));
 
 describe("EntityUsageExport utils", () => {
+  // Entity keys match team_ids because that's how the backend shapes team exports
+  // (breakdown.entities is keyed by team_id). The fix under test uses the entity key
+  // directly for display, so the key_alias/team_id in api_key_breakdown metadata is
+  // no longer consulted — it's retained here only to mirror real payload shape.
   const mockSpendData: EntitySpendData = {
     results: [
       {
         date: "2025-01-01",
         breakdown: {
           entities: {
-            entity1: {
+            "team-1": {
               metrics: {
                 spend: 10.5,
                 api_requests: 100,
@@ -63,7 +68,7 @@ describe("EntityUsageExport utils", () => {
                 },
               },
             },
-            entity2: {
+            "team-2": {
               metrics: {
                 spend: 20.3,
                 api_requests: 200,
@@ -98,7 +103,7 @@ describe("EntityUsageExport utils", () => {
         date: "2025-01-02",
         breakdown: {
           entities: {
-            entity1: {
+            "team-1": {
               metrics: {
                 spend: 15.2,
                 api_requests: 150,
@@ -183,14 +188,16 @@ describe("EntityUsageExport utils", () => {
       expect(entity1?.metrics.cache_creation_input_tokens).toBe(75);
     });
 
-    it("should use key alias when available", () => {
+    it("should use entity key as alias when no team alias map is provided", () => {
+      // Non-team exports (tags, orgs, customers, …) pass no teamAliasMap.
+      // For teams, this is also the fallback when a team is missing from the map.
       const result = getEntityBreakdown(mockSpendData);
       const entity1 = result.find((e) => e.metadata.id === "team-1");
 
-      expect(entity1?.metadata.alias).toBe("alias-1");
+      expect(entity1?.metadata.alias).toBe("team-1");
     });
 
-    it("should use team alias map when key alias is not available", () => {
+    it("should use team alias map to resolve alias from entity key", () => {
       const spendDataWithoutAlias: EntitySpendData = {
         ...mockSpendData,
         results: [
@@ -198,7 +205,7 @@ describe("EntityUsageExport utils", () => {
             date: "2025-01-01",
             breakdown: {
               entities: {
-                entity1: {
+                "team-1": {
                   metrics: {
                     spend: 10.5,
                     api_requests: 100,
@@ -298,7 +305,7 @@ describe("EntityUsageExport utils", () => {
             date: "2025-01-01",
             breakdown: {
               entities: {
-                entity1: {
+                "team-1": {
                   metrics: {
                     spend: 10.5,
                     api_requests: 100,
@@ -378,15 +385,17 @@ describe("EntityUsageExport utils", () => {
       }
     });
 
-    it("should use dash when team id is not available", () => {
-      const spendDataWithoutTeamId: EntitySpendData = {
+    it("should fall back to the entity key when there is no team alias mapping", () => {
+      // e.g. tag/org/customer exports where teamAliasMap has no entry for the entity,
+      // or a team that isn't in the alias map — the entity key itself is the label.
+      const spendDataWithoutAlias: EntitySpendData = {
         ...mockSpendData,
         results: [
           {
             date: "2025-01-01",
             breakdown: {
               entities: {
-                entity1: {
+                "my-tag": {
                   metrics: {
                     spend: 10.5,
                     api_requests: 100,
@@ -405,11 +414,11 @@ describe("EntityUsageExport utils", () => {
         metadata: mockSpendData.metadata,
       };
 
-      const result = generateDailyData(spendDataWithoutTeamId, "Team");
+      const result = generateDailyData(spendDataWithoutAlias, "Tag");
       const entry = result[0];
 
-      expect(entry["Team ID"]).toBe("-");
-      expect(entry["Team"]).toBe("-");
+      expect(entry["Tag ID"]).toBe("my-tag");
+      expect(entry["Tag"]).toBe("my-tag");
     });
 
     it("should format spend values correctly", () => {
@@ -470,7 +479,7 @@ describe("EntityUsageExport utils", () => {
           date: "2025-01-01",
           breakdown: {
             entities: {
-              entity1: {
+              "team-1": {
                 metrics: {
                   spend: 10.5,
                   api_requests: 100,
@@ -513,7 +522,7 @@ describe("EntityUsageExport utils", () => {
                   },
                 },
               },
-              entity2: {
+              "team-2": {
                 metrics: {
                   spend: 20.3,
                   api_requests: 200,
@@ -548,7 +557,7 @@ describe("EntityUsageExport utils", () => {
           date: "2025-01-02",
           breakdown: {
             entities: {
-              entity1: {
+              "team-1": {
                 metrics: {
                   spend: 15.2,
                   api_requests: 150,
@@ -978,7 +987,7 @@ describe("EntityUsageExport utils", () => {
           date: "2025-01-01",
           breakdown: {
             entities: {
-              entity1: {
+              "team-1": {
                 metrics: {
                   spend: 10.5,
                   api_requests: 100,
@@ -1027,6 +1036,18 @@ describe("EntityUsageExport utils", () => {
                   failed_requests: 2,
                   total_tokens: 500,
                 },
+                api_key_breakdown: {
+                  key1: {
+                    metrics: {
+                      spend: 5.0,
+                      api_requests: 50,
+                      successful_requests: 48,
+                      failed_requests: 2,
+                      total_tokens: 500,
+                    },
+                    metadata: { team_id: "team-1" },
+                  },
+                },
               },
               "gpt-3.5-turbo": {
                 metrics: {
@@ -1035,6 +1056,18 @@ describe("EntityUsageExport utils", () => {
                   successful_requests: 47,
                   failed_requests: 3,
                   total_tokens: 500,
+                },
+                api_key_breakdown: {
+                  key2: {
+                    metrics: {
+                      spend: 5.5,
+                      api_requests: 50,
+                      successful_requests: 47,
+                      failed_requests: 3,
+                      total_tokens: 500,
+                    },
+                    metadata: { team_id: "team-1" },
+                  },
                 },
               },
             },
@@ -1109,6 +1142,18 @@ describe("EntityUsageExport utils", () => {
                     failed_requests: 5,
                     total_tokens: 1000,
                   },
+                  api_key_breakdown: {
+                    key1: {
+                      metrics: {
+                        spend: 10.5,
+                        api_requests: 100,
+                        successful_requests: 95,
+                        failed_requests: 5,
+                        total_tokens: 1000,
+                      },
+                      metadata: { team_id: "team-1" },
+                    },
+                  },
                 },
               },
             },
@@ -1125,12 +1170,229 @@ describe("EntityUsageExport utils", () => {
       );
     });
 
-    it("should aggregate model metrics from api key breakdown", () => {
+    it("should attribute each model only its own per-key spend", () => {
       const result = generateDailyWithModelsData(mockSpendDataWithModels, "Team");
 
       const gpt4Entry = result.find((r) => r.Model === "gpt-4");
-      expect(gpt4Entry).toBeDefined();
-      expect(gpt4Entry?.Requests).toBeGreaterThan(0);
+      const gpt35Entry = result.find((r) => r.Model === "gpt-3.5-turbo");
+
+      expect(gpt4Entry?.["Spend ($)"]).toBe("5.0000");
+      expect(gpt4Entry?.Requests).toBe(50);
+      expect(gpt4Entry?.["Total Tokens"]).toBe(500);
+
+      expect(gpt35Entry?.["Spend ($)"]).toBe("5.5000");
+      expect(gpt35Entry?.Requests).toBe(50);
+      expect(gpt35Entry?.["Total Tokens"]).toBe(500);
+    });
+
+    it("should not duplicate a user's spend across every model (regression for LIT overcount)", () => {
+      // One user, one key, that key used two models. The entity-level api_key_breakdown
+      // carries the key's total (8.0) across both models; each model's api_key_breakdown
+      // carries only that model's share (3.0 + 5.0). The per-model rows must sum back to
+      // the user-day total, not repeat the total once per model.
+      const data: EntitySpendData = {
+        results: [
+          {
+            date: "2025-02-14",
+            breakdown: {
+              entities: {
+                user1: {
+                  metrics: {
+                    spend: 8.0,
+                    api_requests: 80,
+                    successful_requests: 78,
+                    failed_requests: 2,
+                    total_tokens: 800,
+                    prompt_tokens: 500,
+                    completion_tokens: 300,
+                    cache_read_input_tokens: 0,
+                    cache_creation_input_tokens: 0,
+                  },
+                  api_key_breakdown: {
+                    key1: {
+                      metrics: {
+                        spend: 8.0,
+                        api_requests: 80,
+                        successful_requests: 78,
+                        failed_requests: 2,
+                        total_tokens: 800,
+                      },
+                      metadata: { team_id: "team-1" },
+                    },
+                  },
+                },
+              },
+              models: {
+                "claude-3-haiku": {
+                  metrics: {
+                    spend: 3.0,
+                    api_requests: 30,
+                    successful_requests: 29,
+                    failed_requests: 1,
+                    total_tokens: 300,
+                  },
+                  api_key_breakdown: {
+                    key1: {
+                      metrics: {
+                        spend: 3.0,
+                        api_requests: 30,
+                        successful_requests: 29,
+                        failed_requests: 1,
+                        total_tokens: 300,
+                      },
+                      metadata: { team_id: "team-1" },
+                    },
+                  },
+                },
+                "claude-sonnet-4-5": {
+                  metrics: {
+                    spend: 5.0,
+                    api_requests: 50,
+                    successful_requests: 49,
+                    failed_requests: 1,
+                    total_tokens: 500,
+                  },
+                  api_key_breakdown: {
+                    key1: {
+                      metrics: {
+                        spend: 5.0,
+                        api_requests: 50,
+                        successful_requests: 49,
+                        failed_requests: 1,
+                        total_tokens: 500,
+                      },
+                      metadata: { team_id: "team-1" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ],
+        metadata: {
+          total_spend: 8.0,
+          total_api_requests: 80,
+          total_successful_requests: 78,
+          total_failed_requests: 2,
+          total_tokens: 800,
+        },
+      };
+
+      const result = generateDailyWithModelsData(data, "User");
+
+      expect(result).toHaveLength(2);
+
+      const haiku = result.find((r) => r.Model === "claude-3-haiku");
+      const sonnet = result.find((r) => r.Model === "claude-sonnet-4-5");
+
+      expect(haiku?.["Spend ($)"]).toBe("3.0000");
+      expect(sonnet?.["Spend ($)"]).toBe("5.0000");
+
+      const totalSpend = result.reduce((sum, r) => sum + parseFloat(r["Spend ($)"].replace(/,/g, "")), 0);
+      const totalRequests = result.reduce((sum, r) => sum + r.Requests, 0);
+      const totalTokens = result.reduce((sum, r) => sum + r["Total Tokens"], 0);
+
+      expect(totalSpend).toBeCloseTo(8.0, 4);
+      expect(totalRequests).toBe(80);
+      expect(totalTokens).toBe(800);
+    });
+
+    it("should omit models the user never called instead of fanning out", () => {
+      // A second key (key2) belongs to a different user and is the only caller of
+      // gpt-3.5-turbo. user1 only used key1 -> gpt-4. user1 must get exactly one row.
+      const data: EntitySpendData = {
+        results: [
+          {
+            date: "2025-02-14",
+            breakdown: {
+              entities: {
+                user1: {
+                  metrics: {
+                    spend: 5.0,
+                    api_requests: 50,
+                    successful_requests: 48,
+                    failed_requests: 2,
+                    total_tokens: 500,
+                    prompt_tokens: 300,
+                    completion_tokens: 200,
+                    cache_read_input_tokens: 0,
+                    cache_creation_input_tokens: 0,
+                  },
+                  api_key_breakdown: {
+                    key1: {
+                      metrics: {
+                        spend: 5.0,
+                        api_requests: 50,
+                        successful_requests: 48,
+                        failed_requests: 2,
+                        total_tokens: 500,
+                      },
+                      metadata: { team_id: "team-1" },
+                    },
+                  },
+                },
+              },
+              models: {
+                "gpt-4": {
+                  metrics: {
+                    spend: 5.0,
+                    api_requests: 50,
+                    successful_requests: 48,
+                    failed_requests: 2,
+                    total_tokens: 500,
+                  },
+                  api_key_breakdown: {
+                    key1: {
+                      metrics: {
+                        spend: 5.0,
+                        api_requests: 50,
+                        successful_requests: 48,
+                        failed_requests: 2,
+                        total_tokens: 500,
+                      },
+                      metadata: { team_id: "team-1" },
+                    },
+                  },
+                },
+                "gpt-3.5-turbo": {
+                  metrics: {
+                    spend: 9.0,
+                    api_requests: 90,
+                    successful_requests: 90,
+                    failed_requests: 0,
+                    total_tokens: 900,
+                  },
+                  api_key_breakdown: {
+                    key2: {
+                      metrics: {
+                        spend: 9.0,
+                        api_requests: 90,
+                        successful_requests: 90,
+                        failed_requests: 0,
+                        total_tokens: 900,
+                      },
+                      metadata: { team_id: "team-2" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ],
+        metadata: {
+          total_spend: 14.0,
+          total_api_requests: 140,
+          total_successful_requests: 138,
+          total_failed_requests: 2,
+          total_tokens: 1400,
+        },
+      };
+
+      const result = generateDailyWithModelsData(data, "User");
+
+      expect(result).toHaveLength(1);
+      expect(result[0].Model).toBe("gpt-4");
+      expect(result[0]["Spend ($)"]).toBe("5.0000");
     });
 
     it("should use team alias when available", () => {
@@ -1302,6 +1564,18 @@ describe("EntityUsageExport utils", () => {
                     successful_requests: 95,
                     failed_requests: 5,
                     total_tokens: 1000,
+                  },
+                  api_key_breakdown: {
+                    key1: {
+                      metrics: {
+                        spend: 10.5,
+                        api_requests: 100,
+                        successful_requests: 95,
+                        failed_requests: 5,
+                        total_tokens: 1000,
+                      },
+                      metadata: { team_id: "team-1" },
+                    },
                   },
                 },
               },
@@ -1559,6 +1833,181 @@ describe("EntityUsageExport utils", () => {
       expect(exportObject.metadata.filters_applied).toEqual(["filter1"]);
 
       window.Blob = originalBlob;
+    });
+  });
+
+  describe("resolveEntities and aggregated endpoint fallback", () => {
+    // Simulates the response from /user/daily/activity/aggregated which has
+    // empty entities but populated api_keys at the breakdown level.
+    // Derived from mockSpendData: flatten all entities' api_key_breakdowns
+    // into top-level api_keys, clear entities, and add a second key for team-1
+    // to test multi-key grouping.
+    const aggregatedSpendData: EntitySpendData = {
+      ...mockSpendData,
+      results: mockSpendData.results.slice(0, 1).map((day) => ({
+        ...day,
+        breakdown: {
+          entities: {},
+          api_keys: {
+            ...Object.fromEntries(
+              Object.values(day.breakdown.entities as Record<string, any>).flatMap((e: any) =>
+                Object.entries(e.api_key_breakdown || {}),
+              ),
+            ),
+            // Extra key on team-1 to test multi-key-per-team aggregation
+            key1b: {
+              metrics: { spend: 5, api_requests: 50, successful_requests: 48, failed_requests: 2, total_tokens: 500 },
+              metadata: { team_id: "team-1", key_alias: "staging-key" },
+            },
+          },
+          models: {
+            "gpt-4": {
+              metrics: { spend: 35.8, api_requests: 350, total_tokens: 3500 },
+              api_key_breakdown: {
+                key1: {
+                  metrics: {
+                    spend: 10.5,
+                    api_requests: 100,
+                    successful_requests: 95,
+                    failed_requests: 5,
+                    total_tokens: 1000,
+                  },
+                  metadata: { team_id: "team-1" },
+                },
+                key1b: {
+                  metrics: {
+                    spend: 5,
+                    api_requests: 50,
+                    successful_requests: 48,
+                    failed_requests: 2,
+                    total_tokens: 500,
+                  },
+                  metadata: { team_id: "team-1" },
+                },
+                key2: {
+                  metrics: {
+                    spend: 20.3,
+                    api_requests: 200,
+                    successful_requests: 195,
+                    failed_requests: 5,
+                    total_tokens: 2000,
+                  },
+                  metadata: { team_id: "team-2" },
+                },
+              },
+            },
+          },
+        },
+      })),
+    };
+
+    describe("resolveEntities", () => {
+      it("should return entities when populated", () => {
+        const breakdown = {
+          entities: { e1: { metrics: { spend: 1 } } },
+          api_keys: { k1: { metrics: { spend: 2 }, metadata: { team_id: "t1" } } },
+        };
+        const result = resolveEntities(breakdown);
+        expect(result).toBe(breakdown.entities);
+      });
+
+      it("should aggregate api_keys into entities when entities is empty", () => {
+        const breakdown = aggregatedSpendData.results[0].breakdown;
+        const result = resolveEntities(breakdown);
+
+        // Two teams: team-1 (key1+key2) and team-2 (key3)
+        expect(Object.keys(result)).toHaveLength(2);
+        expect(result["team-1"]).toBeDefined();
+        expect(result["team-2"]).toBeDefined();
+
+        // team-1 spend = 10.5 (key1) + 5 (key1b)
+        expect(result["team-1"].metrics.spend).toBe(15.5);
+        expect(result["team-1"].metrics.api_requests).toBe(150);
+        expect(result["team-1"].metrics.total_tokens).toBe(1500);
+
+        // team-2 spend = 20.3 (key2)
+        expect(result["team-2"].metrics.spend).toBe(20.3);
+        expect(result["team-2"].metrics.api_requests).toBe(200);
+      });
+
+      it("should use 'Unassigned' for keys without team_id", () => {
+        const breakdown = {
+          entities: {},
+          api_keys: {
+            k1: {
+              metrics: { spend: 7, api_requests: 10, successful_requests: 10, failed_requests: 0, total_tokens: 100 },
+              metadata: {},
+            },
+          },
+        };
+        const result = resolveEntities(breakdown);
+        expect(result["Unassigned"]).toBeDefined();
+        expect(result["Unassigned"].metrics.spend).toBe(7);
+      });
+
+      it("should handle missing or empty api_keys gracefully", () => {
+        expect(Object.keys(resolveEntities({ entities: {}, api_keys: {} }))).toHaveLength(0);
+        expect(Object.keys(resolveEntities({ entities: {} }))).toHaveLength(0);
+      });
+
+      it("should preserve api_key_breakdown on aggregated entities", () => {
+        const breakdown = aggregatedSpendData.results[0].breakdown;
+        const result = resolveEntities(breakdown);
+
+        // team-1 should have key1 and key1b in api_key_breakdown
+        expect(Object.keys(result["team-1"].api_key_breakdown)).toEqual(["key1", "key1b"]);
+        // team-2 should have key2
+        expect(Object.keys(result["team-2"].api_key_breakdown)).toEqual(["key2"]);
+      });
+    });
+
+    describe("getEntityBreakdown with aggregated data", () => {
+      it("should produce breakdown from api_keys when entities is empty", () => {
+        const result = getEntityBreakdown(aggregatedSpendData);
+        expect(result.length).toBeGreaterThan(0);
+
+        // Sorted by spend desc: team-2 (20.3) then team-1 (15.5)
+        expect(result[0].metrics.spend).toBe(20.3);
+        expect(result[1].metrics.spend).toBe(15.5);
+      });
+    });
+
+    describe("generateDailyData with aggregated data", () => {
+      it("should produce rows from api_keys when entities is empty", () => {
+        const result = generateDailyData(aggregatedSpendData, "Team");
+        expect(result.length).toBeGreaterThan(0);
+        expect(result[0]).toHaveProperty("Date");
+        expect(result[0]).toHaveProperty("Team");
+      });
+    });
+
+    describe("generateDailyWithKeysData with aggregated data", () => {
+      it("should produce rows from api_keys when entities is empty", () => {
+        const result = generateDailyWithKeysData(aggregatedSpendData, "Team");
+        expect(result.length).toBeGreaterThan(0);
+
+        // Should have 3 key rows (key1, key1b, key2)
+        expect(result).toHaveLength(3);
+        const keyIds = result.map((r) => r["Key ID"]);
+        expect(keyIds).toContain("key1");
+        expect(keyIds).toContain("key1b");
+        expect(keyIds).toContain("key2");
+      });
+    });
+
+    describe("generateDailyWithModelsData with aggregated data", () => {
+      it("should produce rows from api_keys when entities is empty", () => {
+        const result = generateDailyWithModelsData(aggregatedSpendData, "Team");
+        expect(result.length).toBeGreaterThan(0);
+        expect(result[0]).toHaveProperty("Model");
+
+        // team-1 = key1 (10.5) + key1b (5) on gpt-4; team-2 = key2 (20.3) on gpt-4.
+        // Spend must aggregate per team-key, not repeat the model total per team.
+        const team1 = result.find((r) => r["Team ID"] === "team-1");
+        const team2 = result.find((r) => r["Team ID"] === "team-2");
+        expect(team1?.["Spend ($)"]).toBe("15.5000");
+        expect(team2?.["Spend ($)"]).toBe("20.3000");
+      });
     });
   });
 });

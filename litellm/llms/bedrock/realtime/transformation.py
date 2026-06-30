@@ -43,13 +43,13 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
         self.prompt_name = str(uuid_lib.uuid4())
         self.content_name = str(uuid_lib.uuid4())
         self.audio_content_name = str(uuid_lib.uuid4())
-        
+
         # Default configuration values
         # Inference configuration
         self.max_tokens = 1024
         self.top_p = 0.9
         self.temperature = 0.7
-        
+
         # Audio output configuration
         self.output_sample_rate_hertz = 24000
         self.output_sample_size_bits = 16
@@ -58,7 +58,7 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
         self.output_encoding = "base64"
         self.output_audio_type = "SPEECH"
         self.output_media_type = "audio/lpcm"
-        
+
         # Audio input configuration
         self.input_sample_rate_hertz = 16000
         self.input_sample_size_bits = 16
@@ -66,19 +66,15 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
         self.input_encoding = "base64"
         self.input_audio_type = "SPEECH"
         self.input_media_type = "audio/lpcm"
-        
+
         # Text configuration
         self.text_media_type = "text/plain"
 
-    def validate_environment(
-        self, headers: dict, model: str, api_key: Optional[str] = None
-    ) -> dict:
+    def validate_environment(self, headers: dict, model: str, api_key: Optional[str] = None) -> dict:
         """Validate environment - no special validation needed for Bedrock."""
         return headers
 
-    def get_complete_url(
-        self, api_base: Optional[str], model: str, api_key: Optional[str] = None
-    ) -> str:
+    def get_complete_url(self, api_base: Optional[str], model: str, api_key: Optional[str] = None) -> str:
         """Get complete URL - handled by aws_sdk_bedrock_runtime."""
         return api_base or ""
 
@@ -124,19 +120,13 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
 
         # Add tool configuration if tools are provided
         if tools:
-            prompt_start_config["toolUseOutputConfiguration"] = {
-                "mediaType": "application/json"
-            }
-            prompt_start_config["toolConfiguration"] = {
-                "tools": self._transform_tools_to_bedrock_format(tools)
-            }
+            prompt_start_config["toolUseOutputConfiguration"] = {"mediaType": "application/json"}
+            prompt_start_config["toolConfiguration"] = {"tools": self._transform_tools_to_bedrock_format(tools)}
 
         prompt_start = {"event": {"promptStart": prompt_start_config}}
 
         # Return as a marker that we've sent the configuration
-        return json.dumps(
-            {"session_start": session_start, "prompt_start": prompt_start}
-        )
+        return json.dumps({"session_start": session_start, "prompt_start": prompt_start})
 
     def _transform_tools_to_bedrock_format(self, tools: List[dict]) -> List[dict]:
         """
@@ -156,9 +146,7 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
                     "toolSpec": {
                         "name": function.get("name", ""),
                         "description": function.get("description", ""),
-                        "inputSchema": {
-                            "json": json.dumps(function.get("parameters", {}))
-                        }
+                        "inputSchema": {"json": json.dumps(function.get("parameters", {}))},
                     }
                 }
                 bedrock_tools.append(bedrock_tool)
@@ -167,11 +155,11 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
     def _map_audio_format_to_sample_rate(self, audio_format: str, is_output: bool = True) -> int:
         """
         Map OpenAI audio format to sample rate.
-        
+
         Args:
             audio_format: OpenAI audio format (pcm16, g711_ulaw, g711_alaw)
             is_output: Whether this is for output (True) or input (False)
-            
+
         Returns:
             Sample rate in Hz
         """
@@ -195,31 +183,27 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
         """
         verbose_logger.debug("Handling session.update")
         messages: List[str] = []
-        
+
         session_config = json_message.get("session", {})
-        
+
         # Update inference configuration from session if provided
         if "max_response_output_tokens" in session_config:
             self.max_tokens = session_config["max_response_output_tokens"]
         if "temperature" in session_config:
             self.temperature = session_config["temperature"]
-        
+
         # Update audio output configuration from session if provided
         if "voice" in session_config:
             self.voice_id = session_config["voice"]
         if "output_audio_format" in session_config:
             output_format = session_config["output_audio_format"]
-            self.output_sample_rate_hertz = self._map_audio_format_to_sample_rate(
-                output_format, is_output=True
-            )
-        
+            self.output_sample_rate_hertz = self._map_audio_format_to_sample_rate(output_format, is_output=True)
+
         # Update audio input configuration from session if provided
         if "input_audio_format" in session_config:
             input_format = session_config["input_audio_format"]
-            self.input_sample_rate_hertz = self._map_audio_format_to_sample_rate(
-                input_format, is_output=False
-            )
-        
+            self.input_sample_rate_hertz = self._map_audio_format_to_sample_rate(input_format, is_output=False)
+
         # Allow direct override of sample rates if provided (custom extension)
         if "output_sample_rate_hertz" in session_config:
             self.output_sample_rate_hertz = session_config["output_sample_rate_hertz"]
@@ -258,12 +242,8 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
         # Add tool configuration if tools are provided
         tools = session_config.get("tools")
         if tools:
-            prompt_start_config["toolUseOutputConfiguration"] = {
-                "mediaType": "application/json"
-            }
-            prompt_start_config["toolConfiguration"] = {
-                "tools": self._transform_tools_to_bedrock_format(tools)
-            }
+            prompt_start_config["toolUseOutputConfiguration"] = {"mediaType": "application/json"}
+            prompt_start_config["toolConfiguration"] = {"tools": self._transform_tools_to_bedrock_format(tools)}
 
         prompt_start = {"event": {"promptStart": prompt_start_config}}
         messages.append(json.dumps(prompt_start))
@@ -428,9 +408,7 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
                                 "type": "TEXT",
                                 "interactive": True,
                                 "role": "USER",
-                                "textInputConfiguration": {
-                                    "mediaType": self.text_media_type
-                                },
+                                "textInputConfiguration": {"mediaType": self.text_media_type},
                             }
                         }
                     }
@@ -549,14 +527,14 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
             OpenAI session.created event
         """
         verbose_logger.debug("Handling sessionStart")
-        
+
         session = OpenAIRealtimeStreamSession(
             id=logging_obj.litellm_trace_id,
             modalities=["text", "audio"],
         )
         if model is not None and isinstance(model, str):
             session["model"] = model
-        
+
         return OpenAIRealtimeStreamSessionEvents(
             type="session.created",
             session=session,
@@ -592,7 +570,13 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
         role = content_start.get("role")
 
         if role != "ASSISTANT":
-            return [], current_response_id, current_output_item_id, current_conversation_id, None
+            return (
+                [],
+                current_response_id,
+                current_output_item_id,
+                current_conversation_id,
+                None,
+            )
 
         verbose_logger.debug("Handling ASSISTANT contentStart")
 
@@ -648,9 +632,7 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
             event_id=f"event_{uuid.uuid4()}",
             item_id=current_output_item_id,
             part=(
-                {"type": "text", "text": ""}
-                if current_delta_type == "text"
-                else {"type": "audio", "transcript": ""}
+                {"type": "text", "text": ""} if current_delta_type == "text" else {"type": "audio", "transcript": ""}
             ),
             response_id=current_response_id,
         )
@@ -775,9 +757,7 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
             # Accumulate text
             accumulated_text = ""
             if current_delta_chunks:
-                accumulated_text = "".join(
-                    [chunk.get("delta", "") for chunk in current_delta_chunks]
-                )
+                accumulated_text = "".join([chunk.get("delta", "") for chunk in current_delta_chunks])
 
             text_done = OpenAIRealtimeResponseTextDone(
                 type="response.text.done",
@@ -850,7 +830,12 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
         event: dict,
         current_response_id: Optional[str],
         current_conversation_id: Optional[str],
-    ) -> tuple[List[OpenAIRealtimeEvents], Optional[str], Optional[str], Optional[ALL_DELTA_TYPES]]:
+    ) -> tuple[
+        List[OpenAIRealtimeEvents],
+        Optional[str],
+        Optional[str],
+        Optional[ALL_DELTA_TYPES],
+    ]:
         """
         Transform Bedrock promptEnd event to OpenAI response.done.
 
@@ -925,6 +910,7 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
         # Create a function call arguments done event
         # This is a custom event format that matches what clients expect
         from typing import cast
+
         function_call_event: dict[str, Any] = {
             "type": "response.function_call_arguments.done",
             "event_id": f"event_{uuid.uuid4()}",
@@ -936,7 +922,11 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
             "arguments": json.dumps(tool_input),
         }
 
-        return [cast(OpenAIRealtimeEvents, function_call_event)], tool_call_id, tool_name
+        return (
+            [cast(OpenAIRealtimeEvents, function_call_event)],
+            tool_call_id,
+            tool_name,
+        )
 
     def transform_conversation_item_create_tool_result_event(self, json_message: dict) -> List[str]:
         """
@@ -969,10 +959,8 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
                         "toolResultInputConfiguration": {
                             "toolUseId": call_id,
                             "type": "TEXT",
-                            "textInputConfiguration": {
-                                "mediaType": "text/plain"
-                            }
-                        }
+                            "textInputConfiguration": {"mediaType": "text/plain"},
+                        },
                     }
                 }
             }
@@ -984,7 +972,7 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
                     "toolResult": {
                         "promptName": self.prompt_name,
                         "contentName": tool_content_name,
-                        "content": output if isinstance(output, str) else json.dumps(output)
+                        "content": (output if isinstance(output, str) else json.dumps(output)),
                     }
                 }
             }
@@ -1025,50 +1013,28 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
         try:
             json_message = json.loads(message)
         except json.JSONDecodeError:
-            message_preview = message[:200].decode('utf-8', errors='replace') if isinstance(message, bytes) else message[:200]
+            message_preview = (
+                message[:200].decode("utf-8", errors="replace") if isinstance(message, bytes) else message[:200]
+            )
             verbose_logger.warning(f"Invalid JSON message: {message_preview}")
             return {
                 "response": [],
-                "current_output_item_id": realtime_response_transform_input.get(
-                    "current_output_item_id"
-                ),
-                "current_response_id": realtime_response_transform_input.get(
-                    "current_response_id"
-                ),
-                "current_delta_chunks": realtime_response_transform_input.get(
-                    "current_delta_chunks"
-                ),
-                "current_conversation_id": realtime_response_transform_input.get(
-                    "current_conversation_id"
-                ),
-                "current_item_chunks": realtime_response_transform_input.get(
-                    "current_item_chunks"
-                ),
-                "current_delta_type": realtime_response_transform_input.get(
-                    "current_delta_type"
-                ),
-                "session_configuration_request": realtime_response_transform_input.get(
-                    "session_configuration_request"
-                ),
+                "current_output_item_id": realtime_response_transform_input.get("current_output_item_id"),
+                "current_response_id": realtime_response_transform_input.get("current_response_id"),
+                "current_delta_chunks": realtime_response_transform_input.get("current_delta_chunks"),
+                "current_conversation_id": realtime_response_transform_input.get("current_conversation_id"),
+                "current_item_chunks": realtime_response_transform_input.get("current_item_chunks"),
+                "current_delta_type": realtime_response_transform_input.get("current_delta_type"),
+                "session_configuration_request": realtime_response_transform_input.get("session_configuration_request"),
             }
 
         # Extract state
-        current_output_item_id = realtime_response_transform_input.get(
-            "current_output_item_id"
-        )
-        current_response_id = realtime_response_transform_input.get(
-            "current_response_id"
-        )
-        current_conversation_id = realtime_response_transform_input.get(
-            "current_conversation_id"
-        )
-        current_delta_chunks = realtime_response_transform_input.get(
-            "current_delta_chunks"
-        )
+        current_output_item_id = realtime_response_transform_input.get("current_output_item_id")
+        current_response_id = realtime_response_transform_input.get("current_response_id")
+        current_conversation_id = realtime_response_transform_input.get("current_conversation_id")
+        current_delta_chunks = realtime_response_transform_input.get("current_delta_chunks")
         current_delta_type = realtime_response_transform_input.get("current_delta_type")
-        session_configuration_request = realtime_response_transform_input.get(
-            "session_configuration_request"
-        )
+        session_configuration_request = realtime_response_transform_input.get("session_configuration_request")
 
         returned_messages: List[OpenAIRealtimeEvents] = []
 
@@ -1077,9 +1043,7 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
 
         # Route to appropriate transformation method
         if "sessionStart" in event:
-            session_created = self.transform_session_start_event(
-                event, model, logging_obj
-            )
+            session_created = self.transform_session_start_event(event, model, logging_obj)
             returned_messages.append(session_created)
             session_configuration_request = json.dumps({"configured": True})
 
@@ -1108,9 +1072,7 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
             returned_messages.extend(events)
 
         elif "audioOutput" in event:
-            events = self.transform_audio_output_event(
-                event, current_output_item_id, current_response_id
-            )
+            events = self.transform_audio_output_event(event, current_output_item_id, current_response_id)
             returned_messages.extend(events)
 
         elif "contentEnd" in event:
@@ -1137,9 +1099,7 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
                 current_output_item_id,
                 current_response_id,
                 current_delta_type,
-            ) = self.transform_prompt_end_event(
-                event, current_response_id, current_conversation_id
-            )
+            ) = self.transform_prompt_end_event(event, current_response_id, current_conversation_id)
             returned_messages.extend(events)
 
         return {
@@ -1148,9 +1108,7 @@ class BedrockRealtimeConfig(BaseRealtimeConfig):
             "current_response_id": current_response_id,
             "current_delta_chunks": current_delta_chunks,
             "current_conversation_id": current_conversation_id,
-            "current_item_chunks": realtime_response_transform_input.get(
-                "current_item_chunks"
-            ),
+            "current_item_chunks": realtime_response_transform_input.get("current_item_chunks"),
             "current_delta_type": current_delta_type,
             "session_configuration_request": session_configuration_request,
         }

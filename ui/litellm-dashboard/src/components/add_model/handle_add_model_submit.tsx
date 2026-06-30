@@ -38,11 +38,51 @@ export const prepareModelAddRequest = async (formValues: Record<string, any>, ac
       litellmParamsObj["model"] = mapping.litellm_model;
 
       // Handle pricing conversion before processing other fields
-      if (formValues.input_cost_per_token) {
+      // Use explicit checks to allow 0 (zero cost models for budget bypass)
+      if (
+        formValues.input_cost_per_token !== undefined &&
+        formValues.input_cost_per_token !== null &&
+        formValues.input_cost_per_token !== ""
+      ) {
         formValues.input_cost_per_token = Number(formValues.input_cost_per_token) / 1000000;
       }
-      if (formValues.output_cost_per_token) {
+      if (
+        formValues.output_cost_per_token !== undefined &&
+        formValues.output_cost_per_token !== null &&
+        formValues.output_cost_per_token !== ""
+      ) {
         formValues.output_cost_per_token = Number(formValues.output_cost_per_token) / 1000000;
+      }
+
+      // Cache Read Cost: if blank, default to Input Cost (already token-unit converted above)
+      if (
+        formValues.cache_read_input_token_cost !== undefined &&
+        formValues.cache_read_input_token_cost !== null &&
+        formValues.cache_read_input_token_cost !== ""
+      ) {
+        formValues.cache_read_input_token_cost = Number(formValues.cache_read_input_token_cost) / 1000000;
+      } else if (
+        formValues.input_cost_per_token !== undefined &&
+        formValues.input_cost_per_token !== null &&
+        formValues.input_cost_per_token !== ""
+      ) {
+        formValues.cache_read_input_token_cost = Number(formValues.input_cost_per_token);
+      } else {
+        delete formValues.cache_read_input_token_cost;
+      }
+
+      // Cache Write Cost: explicit value if provided, else leave unset so the
+      // backend keeps the model-level default (per-second pricing, model_prices
+      // entries, etc.). Sending 0 here would overwrite that default.
+      // The backend falls back to input_cost_per_token when this key is absent.
+      if (
+        formValues.cache_creation_input_token_cost !== undefined &&
+        formValues.cache_creation_input_token_cost !== null &&
+        formValues.cache_creation_input_token_cost !== ""
+      ) {
+        formValues.cache_creation_input_token_cost = Number(formValues.cache_creation_input_token_cost) / 1000000;
+      } else {
+        delete formValues.cache_creation_input_token_cost;
       }
       // Keep input_cost_per_second as is, no conversion needed
 
@@ -90,6 +130,9 @@ export const prepareModelAddRequest = async (formValues: Record<string, any>, ac
           if (value && value != undefined) {
             try {
               litellmExtraParams = JSON.parse(value);
+              if ("litellm_credential_name" in litellmExtraParams) {
+                delete litellmExtraParams.litellm_credential_name;
+              }
             } catch (error) {
               NotificationManager.fromBackend("Failed to parse LiteLLM Extra Params: " + error);
               throw new Error("Failed to parse litellm_extra_params: " + error);
@@ -115,8 +158,14 @@ export const prepareModelAddRequest = async (formValues: Record<string, any>, ac
         }
 
         // Handle the pricing fields
-        else if (key === "input_cost_per_token" || key === "output_cost_per_token" || key === "input_cost_per_second") {
-          if (value) {
+        else if (
+          key === "input_cost_per_token" ||
+          key === "output_cost_per_token" ||
+          key === "input_cost_per_second" ||
+          key === "cache_read_input_token_cost" ||
+          key === "cache_creation_input_token_cost"
+        ) {
+          if (value !== undefined && value !== null && value !== "") {
             litellmParamsObj[key] = Number(value);
           }
           continue;

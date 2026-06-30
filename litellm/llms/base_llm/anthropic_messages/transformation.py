@@ -103,6 +103,17 @@ class BaseAnthropicMessagesConfig(ABC):
         """
         return headers, None
 
+    def should_filter_anthropic_beta_headers(self) -> bool:
+        """
+        Whether ``anthropic-beta`` header values should be filtered down to the
+        ones the routed provider supports before the upstream request.
+
+        Cross-provider translation paths (bedrock, vertex_ai, ...) need this so
+        unsupported betas are dropped. Configs that forward natively to an
+        Anthropic-compatible endpoint return False to pass betas through verbatim.
+        """
+        return True
+
     def get_async_streaming_response_iterator(
         self,
         model: str,
@@ -117,6 +128,37 @@ class BaseAnthropicMessagesConfig(ABC):
     ) -> "BaseLLMException":
         from litellm.llms.base_llm.chat.transformation import BaseLLMException
 
-        return BaseLLMException(
-            message=error_message, status_code=status_code, headers=headers
+        return BaseLLMException(message=error_message, status_code=status_code, headers=headers)
+
+    @property
+    def max_retry_on_anthropic_messages_http_error(self) -> int:
+        """
+        Max HTTP attempts for /v1/messages when the handler may mutate the body and
+        retry (e.g. strip invalid encrypted thinking signatures after a deployment or
+        credential change).
+        """
+        return 2
+
+    def should_retry_anthropic_messages_on_http_error(self, e: httpx.HTTPStatusError, litellm_params: dict) -> bool:
+        """
+        When True, async_anthropic_messages_handler will transform the request body
+        and issue one more attempt (bounded by max_retry_on_anthropic_messages_http_error).
+        """
+        from litellm.llms.anthropic.common_utils import (
+            is_anthropic_invalid_thinking_signature_error,
         )
+
+        return e.response.status_code == 400 and is_anthropic_invalid_thinking_signature_error(e.response.text)
+
+    def transform_anthropic_messages_request_on_http_error(self, e: httpx.HTTPStatusError, request_data: dict) -> dict:
+        """
+        Mutates request_data in place when retrying after a recoverable HTTP error.
+        """
+        from litellm.llms.anthropic.common_utils import (
+            is_anthropic_invalid_thinking_signature_error,
+            strip_thinking_blocks_from_anthropic_messages_request_dict,
+        )
+
+        if e.response.status_code == 400 and is_anthropic_invalid_thinking_signature_error(e.response.text):
+            strip_thinking_blocks_from_anthropic_messages_request_dict(request_data)
+        return request_data

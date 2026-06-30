@@ -12,7 +12,6 @@ import os
 import pytest
 import asyncio
 
-
 # Path to your service account JSON file
 SERVICE_ACCOUNT_FILE = "path/to/your/service-account.json"
 
@@ -72,6 +71,10 @@ async def call_spend_logs_endpoint():
     response = requests.get(url, headers=headers)
     print("response from call_spend_logs_endpoint", response)
 
+    if response.status_code != 200:
+        print(f"spend logs endpoint returned {response.status_code}: {response.text}")
+        return None
+
     json_response = response.json()
 
     # get spend for today
@@ -91,6 +94,15 @@ async def call_spend_logs_endpoint():
 LITE_LLM_ENDPOINT = "http://localhost:4000"
 
 
+def _is_vertex_quota_error(exc: Exception) -> bool:
+    message = str(exc)
+    return (
+        "429" in message
+        or "Too Many Requests" in message
+        or "RESOURCE_EXHAUSTED" in message
+    )
+
+
 @pytest.mark.asyncio()
 async def test_basic_vertex_ai_pass_through_with_spendlog():
 
@@ -98,27 +110,46 @@ async def test_basic_vertex_ai_pass_through_with_spendlog():
     load_vertex_ai_credentials()
 
     vertexai.init(
-        project="pathrise-convert-1606954137718",
-        location="us-central1",
+        project="litellm-ci-cd",
+        location="global",
         api_endpoint=f"{LITE_LLM_ENDPOINT}/vertex_ai",
         api_transport="rest",
     )
 
-    model = GenerativeModel(model_name="gemini-2.5-flash-lite")
-    response = model.generate_content("hi")
+    model = GenerativeModel(model_name="gemini-3.1-flash-lite")
+    try:
+        response = model.generate_content("hi")
+    except Exception as exc:
+        if _is_vertex_quota_error(exc):
+            pytest.skip("Vertex AI quota exhausted")
+        raise
 
     print("response", response)
 
-    await asyncio.sleep(20)
-    spend_after = await call_spend_logs_endpoint()
-    print("spend_after", spend_after)
+    # Spend logging is async/batched and can lag under CI load, so poll instead of
+    # sleeping a fixed amount. A transient empty read is skipped, not counted as 0.0
+    # spend, which would spuriously fail the assertion on an otherwise-billed call.
+    max_wait = 240  # total seconds to wait
+    poll_interval = 10  # seconds between checks
+    elapsed = 0
+    spend_after = spend_before
+    while elapsed < max_wait:
+        await asyncio.sleep(poll_interval)
+        elapsed += poll_interval
+        latest_spend = await call_spend_logs_endpoint()
+        if latest_spend is None:
+            print(f"spend logs unavailable (elapsed={elapsed}s), retrying")
+            continue
+        spend_after = latest_spend
+        print(f"spend_after (elapsed={elapsed}s)", spend_after)
+        if spend_after > spend_before:
+            break
+
     assert (
         spend_after > spend_before
-    ), "Spend should be greater than before. spend_before: {}, spend_after: {}".format(
-        spend_before, spend_after
+    ), "Spend should be greater than before after {}s. spend_before: {}, spend_after: {}".format(
+        elapsed, spend_before, spend_after
     )
-
-    pass
 
 
 @pytest.mark.asyncio()
@@ -130,13 +161,13 @@ async def test_basic_vertex_ai_pass_through_streaming_with_spendlog():
     load_vertex_ai_credentials()
 
     vertexai.init(
-        project="pathrise-convert-1606954137718",
-        location="us-central1",
+        project="litellm-ci-cd",
+        location="global",
         api_endpoint=f"{LITE_LLM_ENDPOINT}/vertex_ai",
         api_transport="rest",
     )
 
-    model = GenerativeModel(model_name="gemini-2.5-flash-lite")
+    model = GenerativeModel(model_name="gemini-3.1-flash-lite")
     response = model.generate_content("hi", stream=True)
 
     for chunk in response:
@@ -169,8 +200,8 @@ async def test_vertex_ai_pass_through_endpoint_context_caching():
     # load_vertex_ai_credentials()
 
     vertexai.init(
-        project="pathrise-convert-1606954137718",
-        location="us-central1",
+        project="litellm-ci-cd",
+        location="global",
         api_endpoint=f"{LITE_LLM_ENDPOINT}/vertex_ai",
         api_transport="rest",
     )
@@ -192,7 +223,7 @@ async def test_vertex_ai_pass_through_endpoint_context_caching():
     ]
 
     cached_content = caching.CachedContent.create(
-        model_name="gemini-2.5-flash-lite-001",
+        model_name="gemini-3.1-flash-lite",
         system_instruction=system_instruction,
         contents=contents,
         ttl=datetime.timedelta(minutes=60),

@@ -1,7 +1,6 @@
 import React from "react";
-import { Typography, Select, Table, Tag } from "antd";
+import { Typography, Select, Table, Tag, Button } from "antd";
 import { DeleteOutlined } from "@ant-design/icons";
-import { Button } from "@tremor/react";
 
 const { Text } = Typography;
 const { Option } = Select;
@@ -21,11 +20,7 @@ interface PatternTableProps {
   onRemove: (id: string) => void;
 }
 
-const PatternTable: React.FC<PatternTableProps> = ({
-  patterns,
-  onActionChange,
-  onRemove,
-}) => {
+const PatternTable: React.FC<PatternTableProps> = ({ patterns, onActionChange, onRemove }) => {
   const columns = [
     {
       title: "Type",
@@ -33,9 +28,7 @@ const PatternTable: React.FC<PatternTableProps> = ({
       key: "type",
       width: 100,
       render: (type: string) => (
-        <Tag color={type === "prebuilt" ? "blue" : "green"}>
-          {type === "prebuilt" ? "Prebuilt" : "Custom"}
-        </Tag>
+        <Tag color={type === "prebuilt" ? "blue" : "green"}>{type === "prebuilt" ? "Prebuilt" : "Custom"}</Tag>
       ),
     },
     {
@@ -48,7 +41,14 @@ const PatternTable: React.FC<PatternTableProps> = ({
       title: "Regex pattern",
       dataIndex: "pattern",
       key: "pattern",
-      render: (pattern: string) => (pattern ? <Text code style={{ fontSize: 12 }}>{pattern.substring(0, 40)}...</Text> : "-"),
+      render: (pattern: string) =>
+        pattern ? (
+          <Text code style={{ fontSize: 12 }}>
+            {pattern.substring(0, 40)}...
+          </Text>
+        ) : (
+          "-"
+        ),
     },
     {
       title: "Action",
@@ -72,14 +72,7 @@ const PatternTable: React.FC<PatternTableProps> = ({
       key: "actions",
       width: 100,
       render: (_: any, record: Pattern) => (
-        <Button
-          type="button"
-          variant="light"
-          color="red"
-          size="xs"
-          icon={DeleteOutlined}
-          onClick={() => onRemove(record.id)}
-        >
+        <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => onRemove(record.id)}>
           Delete
         </Button>
       ),
@@ -87,23 +80,10 @@ const PatternTable: React.FC<PatternTableProps> = ({
   ];
 
   if (patterns.length === 0) {
-    return (
-      <div style={{ textAlign: "center", padding: "40px 0", color: "#999" }}>
-        No patterns added.
-      </div>
-    );
+    return <div style={{ textAlign: "center", padding: "40px 0", color: "#999" }}>No patterns added.</div>;
   }
 
-  return (
-    <Table
-      dataSource={patterns}
-      columns={columns}
-      rowKey="id"
-      pagination={false}
-      size="small"
-    />
-  );
+  return <Table dataSource={patterns} columns={columns} rowKey="id" pagination={false} size="small" />;
 };
 
 export default PatternTable;
-

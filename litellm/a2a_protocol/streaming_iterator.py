@@ -158,7 +158,7 @@ class A2AStreamingIterator:
         result: Dict[str, Any] = {
             "id": getattr(self.request, "id", "unknown"),
             "jsonrpc": "2.0",
-            "usage": usage.model_dump() if hasattr(usage, "model_dump") else dict(usage),
+            "usage": (usage.model_dump() if hasattr(usage, "model_dump") else dict(usage)),
         }
 
         # Add final chunk result if available
@@ -170,4 +170,3 @@ class A2AStreamingIterator:
                 pass
 
         return result
-

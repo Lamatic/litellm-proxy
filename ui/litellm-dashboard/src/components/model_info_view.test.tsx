@@ -23,6 +23,7 @@ vi.mock("./molecules/notifications_manager", () => ({
 vi.mock("./networking", () => ({
   modelInfoV1Call: vi.fn(),
   credentialGetCall: vi.fn(),
+  credentialListCall: vi.fn(),
   getGuardrailsList: vi.fn(),
   tagListCall: vi.fn(),
   testConnectionRequest: vi.fn(),
@@ -47,6 +48,7 @@ vi.mock("@/app/(dashboard)/hooks/models/useModelCostMap", () => ({
 const mockNotificationsManager = vi.mocked(NotificationsManager);
 const mockModelInfoV1Call = vi.mocked(networking.modelInfoV1Call);
 const mockCredentialGetCall = vi.mocked(networking.credentialGetCall);
+const mockCredentialListCall = vi.mocked(networking.credentialListCall);
 const mockGetGuardrailsList = vi.mocked(networking.getGuardrailsList);
 const mockTagListCall = vi.mocked(networking.tagListCall);
 const mockTestConnectionRequest = vi.mocked(networking.testConnectionRequest);
@@ -63,6 +65,7 @@ describe("ModelInfoView", () => {
       model: "gpt-4",
       api_base: "https://api.openai.com/v1",
       custom_llm_provider: "openai",
+      litellm_credential_name: "selected-credential",
     },
     model_info: {
       id: "123",
@@ -124,6 +127,15 @@ describe("ModelInfoView", () => {
       credential_name: "test-credential",
       credential_values: {},
       credential_info: {},
+    });
+    mockCredentialListCall.mockResolvedValue({
+      credentials: [
+        {
+          credential_name: "selected-credential",
+          credential_values: {},
+          credential_info: {},
+        },
+      ],
     });
 
     mockGetGuardrailsList.mockResolvedValue({
@@ -236,6 +248,33 @@ describe("ModelInfoView", () => {
       expect(mockTestConnectionRequest).toHaveBeenCalled();
       expect(mockNotificationsManager.success).toHaveBeenCalledWith("Connection test successful!");
     });
+  });
+
+  it("should pass model_info.id to disambiguate duplicate model_name deployments", async () => {
+    // Regression test: when two deployments share `model_name` (e.g.
+    // wildcard `openai/*` with different `api_base` values), the UI
+    // must forward the clicked row's `model_info.id` to the backend.
+    // Otherwise /health/test_connection silently probes deployments[0]
+    // instead of the deployment the user actually selected.
+    const user = userEvent.setup();
+    render(<ModelInfoView {...DEFAULT_ADMIN_PROPS} />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText("Model Settings")).toBeInTheDocument();
+    });
+
+    const testButton = screen.getByRole("button", { name: /test connection/i });
+    await user.click(testButton);
+
+    await waitFor(() => {
+      expect(mockTestConnectionRequest).toHaveBeenCalled();
+    });
+
+    const callArgs = mockTestConnectionRequest.mock.calls[0];
+    // Signature: (accessToken, litellm_params, model_info, mode)
+    const modelInfoArg = callArgs[2] as Record<string, unknown>;
+    expect(modelInfoArg).toBeDefined();
+    expect(modelInfoArg.id).toBe("123");
   });
 
   it("should display error notification when connection test fails", async () => {
@@ -489,6 +528,111 @@ describe("ModelInfoView", () => {
     });
   });
 
+  it("should show existing credentials field in edit mode", async () => {
+    const user = userEvent.setup();
+    render(<ModelInfoView {...DEFAULT_ADMIN_PROPS} />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /edit settings/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /edit settings/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Existing Credentials")).toBeInTheDocument();
+    });
+  });
+
+  it("should keep selector credential and ignore litellm_credential_name from LiteLLM Params json", async () => {
+    const user = userEvent.setup();
+    render(<ModelInfoView {...DEFAULT_ADMIN_PROPS} />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /edit settings/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /edit settings/i }));
+
+    const litellmParamsInput = screen
+      .getAllByRole("textbox")
+      .find(
+        (input) =>
+          input.tagName === "TEXTAREA" && (input as HTMLTextAreaElement).value.includes('"custom_llm_provider"'),
+      );
+    expect(litellmParamsInput).toBeDefined();
+    if (!litellmParamsInput) {
+      return;
+    }
+    expect((litellmParamsInput as HTMLTextAreaElement).value).not.toContain("litellm_credential_name");
+    await user.clear(litellmParamsInput);
+    await user.paste(`{"litellm_credential_name":"from-json","timeout":42}`);
+
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(mockModelPatchUpdateCall).toHaveBeenCalled();
+    });
+
+    const updatePayload = mockModelPatchUpdateCall.mock.calls[0][1];
+    expect(updatePayload.litellm_params.litellm_credential_name).toBe("selected-credential");
+    expect(updatePayload.litellm_params.litellm_credential_name).not.toBe("from-json");
+  });
+
+  it("should not include vector_store_ids in update payload when model has none", async () => {
+    // Regression: editing a model without vector stores used to inject
+    // vector_store_ids: [] into litellm_params, which then propagated to
+    // inference requests and broke Anthropic calls.
+    const user = userEvent.setup();
+    render(<ModelInfoView {...DEFAULT_ADMIN_PROPS} />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /edit settings/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /edit settings/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /save changes/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(mockModelPatchUpdateCall).toHaveBeenCalled();
+    });
+
+    const updatePayload = mockModelPatchUpdateCall.mock.calls[0][1];
+    expect(updatePayload.litellm_params).not.toHaveProperty("vector_store_ids");
+  });
+
+  it("should not include input_cost_per_token or output_cost_per_token in update payload when user does not touch cost fields", async () => {
+    // Regression: editing a model without touching cost fields used to inject
+    // input_cost_per_token: 0 and output_cost_per_token: 0 into litellm_params,
+    // overriding the built-in pricing table from model_prices_and_context_window.json.
+    const user = userEvent.setup();
+    render(<ModelInfoView {...DEFAULT_ADMIN_PROPS} />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /edit settings/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /edit settings/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /save changes/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(mockModelPatchUpdateCall).toHaveBeenCalled();
+    });
+
+    const updatePayload = mockModelPatchUpdateCall.mock.calls[0][1];
+    expect(updatePayload.litellm_params).not.toHaveProperty("input_cost_per_token");
+    expect(updatePayload.litellm_params).not.toHaveProperty("output_cost_per_token");
+  });
+
   it("should display health check model field for wildcard models", async () => {
     const wildcardModelData = {
       ...defaultModelData,
@@ -542,7 +686,6 @@ describe("ModelInfoView", () => {
       expect(screen.getByRole("button", { name: /edit auto router/i })).toBeInTheDocument();
     });
   });
-
 
   it("should display model access groups field", async () => {
     render(<ModelInfoView {...DEFAULT_ADMIN_PROPS} />, { wrapper });

@@ -1,6 +1,5 @@
 import React from "react";
-import { Typography, Select, Modal, Space } from "antd";
-import { Button, TextInput } from "@tremor/react";
+import { Typography, Select, Modal, Space, Button, Input } from "antd";
 
 const { Text } = Typography;
 const { Option } = Select;
@@ -29,30 +28,24 @@ const CustomPatternModal: React.FC<CustomPatternModalProps> = ({
   onCancel,
 }) => {
   return (
-    <Modal
-      title="Add custom regex pattern"
-      open={visible}
-      onCancel={onCancel}
-      footer={null}
-      width={800}
-    >
+    <Modal title="Add custom regex pattern" open={visible} onCancel={onCancel} footer={null} width={800}>
       <Space direction="vertical" style={{ width: "100%" }} size="large">
         <div>
           <Text strong>Pattern name</Text>
-          <TextInput
+          <Input
             placeholder="e.g., internal_id, employee_code"
             value={patternName}
-            onValueChange={onNameChange}
+            onChange={(e) => onNameChange(e.target.value)}
             style={{ marginTop: 8 }}
           />
         </div>
 
         <div>
           <Text strong>Regex pattern</Text>
-          <TextInput
+          <Input
             placeholder="e.g., ID-[0-9]{6}"
             value={patternRegex}
-            onValueChange={onRegexChange}
+            onChange={(e) => onRegexChange(e.target.value)}
             style={{ marginTop: 8 }}
           />
           <Text type="secondary" style={{ fontSize: 12 }}>
@@ -65,11 +58,7 @@ const CustomPatternModal: React.FC<CustomPatternModalProps> = ({
           <Text type="secondary" style={{ display: "block", marginTop: 4, marginBottom: 8 }}>
             Choose what action the guardrail should take when this pattern is detected
           </Text>
-          <Select
-            value={patternAction}
-            onChange={onActionChange}
-            style={{ width: "100%" }}
-          >
+          <Select value={patternAction} onChange={onActionChange} style={{ width: "100%" }}>
             <Option value="BLOCK">Block</Option>
             <Option value="MASK">Mask</Option>
           </Select>
@@ -77,10 +66,8 @@ const CustomPatternModal: React.FC<CustomPatternModalProps> = ({
       </Space>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "24px" }}>
-        <Button variant="secondary" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button onClick={onAdd}>
+        <Button onClick={onCancel}>Cancel</Button>
+        <Button type="primary" onClick={onAdd}>
           Add
         </Button>
       </div>
@@ -89,4 +76,3 @@ const CustomPatternModal: React.FC<CustomPatternModalProps> = ({
 };
 
 export default CustomPatternModal;
-

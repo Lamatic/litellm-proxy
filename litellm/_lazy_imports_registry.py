@@ -131,6 +131,7 @@ LLM_CONFIG_NAMES = (
     "OpenrouterConfig",
     "DataRobotConfig",
     "AnthropicConfig",
+    "BedrockClaudePlatformConfig",
     "AnthropicTextConfig",
     "GroqSTTConfig",
     "TritonConfig",
@@ -155,6 +156,7 @@ LLM_CONFIG_NAMES = (
     "VertexAIRerankConfig",
     "FireworksAIRerankConfig",
     "VoyageRerankConfig",
+    "IBMWatsonXRerankConfig",
     "ClarifaiConfig",
     "AI21ChatConfig",
     "LlamaAPIConfig",
@@ -166,9 +168,12 @@ LLM_CONFIG_NAMES = (
     "OllamaConfig",
     "SagemakerConfig",
     "SagemakerChatConfig",
+    "SagemakerNovaConfig",
     "CohereChatConfig",
     "AnthropicMessagesConfig",
+    "BedrockClaudePlatformMessagesConfig",
     "AmazonAnthropicClaudeMessagesConfig",
+    "AmazonMantleMessagesConfig",
     "TogetherAIConfig",
     "NLPCloudConfig",
     "VertexGeminiConfig",
@@ -213,11 +218,14 @@ LLM_CONFIG_NAMES = (
     "TopazImageVariationConfig",
     "OpenAITextCompletionConfig",
     "GroqChatConfig",
+    "BedrockMantleChatConfig",
     "A2AConfig",
     "GenAIHubOrchestrationConfig",
     "VoyageEmbeddingConfig",
     "VoyageContextualEmbeddingConfig",
+    "VoyageMultimodalEmbeddingConfig",
     "InfinityEmbeddingConfig",
+    "PerplexityEmbeddingConfig",
     "AzureAIStudioConfig",
     "MistralConfig",
     "OpenAIResponsesAPIConfig",
@@ -225,7 +233,12 @@ LLM_CONFIG_NAMES = (
     "AzureOpenAIOSeriesResponsesAPIConfig",
     "XAIResponsesAPIConfig",
     "LiteLLMProxyResponsesAPIConfig",
+    "HostedVLLMResponsesAPIConfig",
     "VolcEngineResponsesAPIConfig",
+    "PerplexityResponsesConfig",
+    "DatabricksResponsesAPIConfig",
+    "OpenRouterResponsesAPIConfig",
+    "BedrockMantleResponsesAPIConfig",
     "GoogleAIStudioInteractionsConfig",
     "OpenAIOSeriesConfig",
     "AnthropicSkillsConfig",
@@ -247,7 +260,6 @@ LLM_CONFIG_NAMES = (
     "SambaNovaEmbeddingConfig",
     "FireworksAIConfig",
     "FireworksAITextCompletionConfig",
-    "FireworksAIAudioTranscriptionConfig",
     "FireworksAIEmbeddingConfig",
     "FriendliaiChatConfig",
     "JinaAIEmbeddingConfig",
@@ -256,12 +268,14 @@ LLM_CONFIG_NAMES = (
     "AIMLChatConfig",
     "VolcEngineChatConfig",
     "CodestralTextCompletionConfig",
+    "InceptionTextCompletionConfig",
     "AzureOpenAIAssistantsAPIConfig",
     "HerokuChatConfig",
     "CometAPIConfig",
     "AzureOpenAIConfig",
     "AzureOpenAIGPT5Config",
     "AzureOpenAITextConfig",
+    "AzureSpeechAudioTranscriptionConfig",
     "HostedVLLMChatConfig",
     "HostedVLLMEmbeddingConfig",
     # Alias for backwards compatibility
@@ -291,6 +305,7 @@ LLM_CONFIG_NAMES = (
     "GigaChatConfig",
     "GigaChatEmbeddingConfig",
     "DashScopeChatConfig",
+    "ModelScopeChatConfig",
     "MoonshotChatConfig",
     "DockerModelRunnerChatConfig",
     "V0ChatConfig",
@@ -298,6 +313,7 @@ LLM_CONFIG_NAMES = (
     "MorphChatConfig",
     "RAGFlowConfig",
     "LambdaAIChatConfig",
+    "InceptionChatConfig",
     "HyperbolicChatConfig",
     "VercelAIGatewayConfig",
     "OVHCloudChatConfig",
@@ -306,6 +322,7 @@ LLM_CONFIG_NAMES = (
     "LemonadeChatConfig",
     "SnowflakeEmbeddingConfig",
     "AmazonNovaChatConfig",
+    "SonioxAudioTranscriptionConfig",
 )
 
 # Types that support lazy loading via _lazy_import_types
@@ -365,7 +382,6 @@ UTILS_MODULE_NAMES = (
     "HTTPHandler",
     "get_num_retries_from_retry_policy",
     "reset_retry_policy",
-    "get_secret",
     "get_coroutine_checker",
     "get_litellm_logging_class",
     "get_set_callbacks",
@@ -601,6 +617,10 @@ _LLM_CONFIGS_IMPORT_MAP = {
     "OpenrouterConfig": (".llms.openrouter.chat.transformation", "OpenrouterConfig"),
     "DataRobotConfig": (".llms.datarobot.chat.transformation", "DataRobotConfig"),
     "AnthropicConfig": (".llms.anthropic.chat.transformation", "AnthropicConfig"),
+    "BedrockClaudePlatformConfig": (
+        ".llms.bedrock.claude_platform.transformation",
+        "BedrockClaudePlatformConfig",
+    ),
     "AnthropicTextConfig": (
         ".llms.anthropic.completion.transformation",
         "AnthropicTextConfig",
@@ -670,6 +690,10 @@ _LLM_CONFIGS_IMPORT_MAP = {
         "FireworksAIRerankConfig",
     ),
     "VoyageRerankConfig": (".llms.voyage.rerank.transformation", "VoyageRerankConfig"),
+    "IBMWatsonXRerankConfig": (
+        ".llms.watsonx.rerank.transformation",
+        "IBMWatsonXRerankConfig",
+    ),
     "ClarifaiConfig": (".llms.clarifai.chat.transformation", "ClarifaiConfig"),
     "AI21ChatConfig": (".llms.ai21.chat.transformation", "AI21ChatConfig"),
     "LlamaAPIConfig": (".llms.meta_llama.chat.transformation", "LlamaAPIConfig"),
@@ -690,14 +714,26 @@ _LLM_CONFIGS_IMPORT_MAP = {
         ".llms.sagemaker.chat.transformation",
         "SagemakerChatConfig",
     ),
+    "SagemakerNovaConfig": (
+        ".llms.sagemaker.nova.transformation",
+        "SagemakerNovaConfig",
+    ),
     "CohereChatConfig": (".llms.cohere.chat.transformation", "CohereChatConfig"),
     "AnthropicMessagesConfig": (
         ".llms.anthropic.experimental_pass_through.messages.transformation",
         "AnthropicMessagesConfig",
     ),
+    "BedrockClaudePlatformMessagesConfig": (
+        ".llms.bedrock.claude_platform.messages_transformation",
+        "BedrockClaudePlatformMessagesConfig",
+    ),
     "AmazonAnthropicClaudeMessagesConfig": (
         ".llms.bedrock.messages.invoke_transformations.anthropic_claude3_transformation",
         "AmazonAnthropicClaudeMessagesConfig",
+    ),
+    "AmazonMantleMessagesConfig": (
+        ".llms.bedrock.messages.mantle_transformation",
+        "AmazonMantleMessagesConfig",
     ),
     "TogetherAIConfig": (".llms.together_ai.chat", "TogetherAIConfig"),
     "NLPCloudConfig": (".llms.nlp_cloud.chat.handler", "NLPCloudConfig"),
@@ -851,6 +887,10 @@ _LLM_CONFIGS_IMPORT_MAP = {
         "OpenAITextCompletionConfig",
     ),
     "GroqChatConfig": (".llms.groq.chat.transformation", "GroqChatConfig"),
+    "BedrockMantleChatConfig": (
+        ".llms.bedrock_mantle.chat.transformation",
+        "BedrockMantleChatConfig",
+    ),
     "A2AConfig": (".llms.a2a.chat.transformation", "A2AConfig"),
     "GenAIHubOrchestrationConfig": (
         ".llms.sap.chat.transformation",
@@ -864,9 +904,17 @@ _LLM_CONFIGS_IMPORT_MAP = {
         ".llms.voyage.embedding.transformation_contextual",
         "VoyageContextualEmbeddingConfig",
     ),
+    "VoyageMultimodalEmbeddingConfig": (
+        ".llms.voyage.embedding.transformation_multimodal",
+        "VoyageMultimodalEmbeddingConfig",
+    ),
     "InfinityEmbeddingConfig": (
         ".llms.infinity.embedding.transformation",
         "InfinityEmbeddingConfig",
+    ),
+    "PerplexityEmbeddingConfig": (
+        ".llms.perplexity.embedding.transformation",
+        "PerplexityEmbeddingConfig",
     ),
     "AzureAIStudioConfig": (
         ".llms.azure_ai.chat.transformation",
@@ -893,6 +941,10 @@ _LLM_CONFIGS_IMPORT_MAP = {
         ".llms.litellm_proxy.responses.transformation",
         "LiteLLMProxyResponsesAPIConfig",
     ),
+    "HostedVLLMResponsesAPIConfig": (
+        ".llms.hosted_vllm.responses.transformation",
+        "HostedVLLMResponsesAPIConfig",
+    ),
     "VolcEngineResponsesAPIConfig": (
         ".llms.volcengine.responses.transformation",
         "VolcEngineResponsesAPIConfig",
@@ -900,6 +952,22 @@ _LLM_CONFIGS_IMPORT_MAP = {
     "ManusResponsesAPIConfig": (
         ".llms.manus.responses.transformation",
         "ManusResponsesAPIConfig",
+    ),
+    "PerplexityResponsesConfig": (
+        ".llms.perplexity.responses.transformation",
+        "PerplexityResponsesConfig",
+    ),
+    "DatabricksResponsesAPIConfig": (
+        ".llms.databricks.responses.transformation",
+        "DatabricksResponsesAPIConfig",
+    ),
+    "OpenRouterResponsesAPIConfig": (
+        ".llms.openrouter.responses.transformation",
+        "OpenRouterResponsesAPIConfig",
+    ),
+    "BedrockMantleResponsesAPIConfig": (
+        ".llms.bedrock_mantle.responses.transformation",
+        "BedrockMantleResponsesAPIConfig",
     ),
     "GoogleAIStudioInteractionsConfig": (
         ".llms.gemini.interactions.transformation",
@@ -958,10 +1026,6 @@ _LLM_CONFIGS_IMPORT_MAP = {
         ".llms.fireworks_ai.completion.transformation",
         "FireworksAITextCompletionConfig",
     ),
-    "FireworksAIAudioTranscriptionConfig": (
-        ".llms.fireworks_ai.audio_transcription.transformation",
-        "FireworksAIAudioTranscriptionConfig",
-    ),
     "FireworksAIEmbeddingConfig": (
         ".llms.fireworks_ai.embed.fireworks_ai_transformation",
         "FireworksAIEmbeddingConfig",
@@ -985,6 +1049,10 @@ _LLM_CONFIGS_IMPORT_MAP = {
         ".llms.codestral.completion.transformation",
         "CodestralTextCompletionConfig",
     ),
+    "InceptionTextCompletionConfig": (
+        ".llms.inception.completion.transformation",
+        "InceptionTextCompletionConfig",
+    ),
     "AzureOpenAIAssistantsAPIConfig": (
         ".llms.azure.azure",
         "AzureOpenAIAssistantsAPIConfig",
@@ -999,6 +1067,10 @@ _LLM_CONFIGS_IMPORT_MAP = {
     "AzureOpenAITextConfig": (
         ".llms.azure.completion.transformation",
         "AzureOpenAITextConfig",
+    ),
+    "AzureSpeechAudioTranscriptionConfig": (
+        ".llms.azure.audio_transcription.transformation",
+        "AzureSpeechAudioTranscriptionConfig",
     ),
     "HostedVLLMChatConfig": (
         ".llms.hosted_vllm.chat.transformation",
@@ -1085,6 +1157,10 @@ _LLM_CONFIGS_IMPORT_MAP = {
         ".llms.dashscope.chat.transformation",
         "DashScopeChatConfig",
     ),
+    "ModelScopeChatConfig": (
+        ".llms.modelscope.chat.transformation",
+        "ModelScopeChatConfig",
+    ),
     "MoonshotChatConfig": (".llms.moonshot.chat.transformation", "MoonshotChatConfig"),
     "DockerModelRunnerChatConfig": (
         ".llms.docker_model_runner.chat.transformation",
@@ -1095,6 +1171,10 @@ _LLM_CONFIGS_IMPORT_MAP = {
     "MorphChatConfig": (".llms.morph.chat.transformation", "MorphChatConfig"),
     "RAGFlowConfig": (".llms.ragflow.chat.transformation", "RAGFlowConfig"),
     "LambdaAIChatConfig": (".llms.lambda_ai.chat.transformation", "LambdaAIChatConfig"),
+    "InceptionChatConfig": (
+        ".llms.inception.chat.transformation",
+        "InceptionChatConfig",
+    ),
     "HyperbolicChatConfig": (
         ".llms.hyperbolic.chat.transformation",
         "HyperbolicChatConfig",
@@ -1120,6 +1200,10 @@ _LLM_CONFIGS_IMPORT_MAP = {
     "AmazonNovaChatConfig": (
         ".llms.amazon_nova.chat.transformation",
         "AmazonNovaChatConfig",
+    ),
+    "SonioxAudioTranscriptionConfig": (
+        ".llms.soniox.audio_transcription.transformation",
+        "SonioxAudioTranscriptionConfig",
     ),
 }
 
@@ -1229,7 +1313,6 @@ _UTILS_MODULE_IMPORT_MAP = {
         "litellm.router_utils.get_retry_from_policy",
         "reset_retry_policy",
     ),
-    "get_secret": ("litellm.secret_managers.main", "get_secret"),
     "get_coroutine_checker": (
         "litellm.litellm_core_utils.cached_imports",
         "get_coroutine_checker",
