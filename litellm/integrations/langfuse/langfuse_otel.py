@@ -1,6 +1,7 @@
 import base64
 import json  # <--- NEW
 import os
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 from litellm._logging import verbose_logger
@@ -42,13 +43,12 @@ class LangfuseOtelLogger(OpenTelemetry):
         """
 
         _utils.set_attributes(span, kwargs, response_obj, LangfuseLLMObsOTELAttributes)
+        span.set_attribute("langfuse.observation.type", "generation")
 
         #########################################################
         # Set Langfuse specific attributes
         #########################################################
-        LangfuseOtelLogger._set_langfuse_specific_attributes(
-            span=span, kwargs=kwargs, response_obj=response_obj
-        )
+        LangfuseOtelLogger._set_langfuse_specific_attributes(span=span, kwargs=kwargs, response_obj=response_obj)
         return
 
     @staticmethod
@@ -139,11 +139,7 @@ class LangfuseOtelLogger(OpenTelemetry):
                     function = tool_call.get("function", {})
                     arguments_str = function.get("arguments", "{}")
                     try:
-                        arguments_obj = (
-                            json.loads(arguments_str)
-                            if isinstance(arguments_str, str)
-                            else arguments_str
-                        )
+                        arguments_obj = json.loads(arguments_str) if isinstance(arguments_str, str) else arguments_str
                     except json.JSONDecodeError:
                         arguments_obj = {}
                     langfuse_tool_call = {
@@ -191,18 +187,12 @@ class LangfuseOtelLogger(OpenTelemetry):
                         output_items_data.append(
                             {
                                 "role": getattr(item, "role", "assistant"),
-                                "content": getattr(
-                                    getattr(item, "content", [{}])[0], "text", ""
-                                ),
+                                "content": getattr(getattr(item, "content", [{}])[0], "text", ""),
                             }
                         )
                     elif item_type == "function_call":
                         arguments_str = getattr(item, "arguments", "{}")
-                        arguments_obj = (
-                            json.loads(arguments_str)
-                            if isinstance(arguments_str, str)
-                            else arguments_str
-                        )
+                        arguments_obj = json.loads(arguments_str) if isinstance(arguments_str, str) else arguments_str
                         langfuse_tool_call = {
                             "id": getattr(item, "id", ""),
                             "name": getattr(item, "name", ""),
@@ -377,12 +367,8 @@ class LangfuseOtelLogger(OpenTelemetry):
         """
         dynamic_headers = {}
 
-        dynamic_langfuse_public_key = standard_callback_dynamic_params.get(
-            "langfuse_public_key"
-        )
-        dynamic_langfuse_secret_key = standard_callback_dynamic_params.get(
-            "langfuse_secret_key"
-        )
+        dynamic_langfuse_public_key = standard_callback_dynamic_params.get("langfuse_public_key")
+        dynamic_langfuse_secret_key = standard_callback_dynamic_params.get("langfuse_secret_key")
         if dynamic_langfuse_public_key and dynamic_langfuse_secret_key:
             auth_header = LangfuseOtelLogger._get_langfuse_authorization_header(
                 public_key=dynamic_langfuse_public_key,
@@ -391,6 +377,22 @@ class LangfuseOtelLogger(OpenTelemetry):
             dynamic_headers["Authorization"] = auth_header
 
         return dynamic_headers
+
+    def create_litellm_proxy_request_started_span(
+        self,
+        start_time: datetime,
+        headers: dict,
+    ) -> Optional[Span]:
+        """
+        Override to prevent creating empty proxy request spans.
+
+        Langfuse should only receive spans for actual LLM calls, not for
+        internal proxy operations (auth, postgres, proxy_pre_call, etc.).
+
+        By returning None, we prevent the parent span from being created,
+        which in turn prevents empty traces from being sent to Langfuse.
+        """
+        return None
 
     async def async_service_success_hook(self, *args, **kwargs):
         """

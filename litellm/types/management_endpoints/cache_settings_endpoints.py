@@ -207,4 +207,3 @@ CACHE_SETTINGS_FIELDS: List[CacheSettingsField] = [
         redis_type=None,
     ),
 ]
-

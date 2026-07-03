@@ -1,7 +1,6 @@
-import React from "react";
-import { Typography, Select, Table } from "antd";
 import { DeleteOutlined } from "@ant-design/icons";
-import { Button } from "@tremor/react";
+import { Button, Select, Table, Typography } from "antd";
+import React from "react";
 
 const { Text } = Typography;
 const { Option } = Select;
@@ -19,11 +18,7 @@ interface KeywordTableProps {
   onRemove: (id: string) => void;
 }
 
-const KeywordTable: React.FC<KeywordTableProps> = ({
-  keywords,
-  onActionChange,
-  onRemove,
-}) => {
+const KeywordTable: React.FC<KeywordTableProps> = ({ keywords, onActionChange, onRemove }) => {
   const columns = [
     {
       title: "Keyword",
@@ -58,14 +53,7 @@ const KeywordTable: React.FC<KeywordTableProps> = ({
       key: "actions",
       width: 100,
       render: (_: any, record: BlockedWord) => (
-        <Button
-          type="button"
-          variant="light"
-          color="red"
-          size="xs"
-          icon={DeleteOutlined}
-          onClick={() => onRemove(record.id)}
-        >
+        <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => onRemove(record.id)}>
           Delete
         </Button>
       ),
@@ -73,23 +61,10 @@ const KeywordTable: React.FC<KeywordTableProps> = ({
   ];
 
   if (keywords.length === 0) {
-    return (
-      <div style={{ textAlign: "center", padding: "40px 0", color: "#999" }}>
-        No keywords added.
-      </div>
-    );
+    return <div style={{ textAlign: "center", padding: "40px 0", color: "#999" }}>No keywords added.</div>;
   }
 
-  return (
-    <Table
-      dataSource={keywords}
-      columns={columns}
-      rowKey="id"
-      pagination={false}
-      size="small"
-    />
-  );
+  return <Table dataSource={keywords} columns={columns} rowKey="id" pagination={false} size="small" />;
 };
 
 export default KeywordTable;
-

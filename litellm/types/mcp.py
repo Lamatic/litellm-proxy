@@ -35,13 +35,14 @@ class MCPAuth(str, enum.Enum):
     basic = "basic"
     authorization = "authorization"
     oauth2 = "oauth2"
+    aws_sigv4 = "aws_sigv4"
+    token = "token"
+    oauth2_token_exchange = "oauth2_token_exchange"
 
 
 # MCP Literals
 MCPTransportType = Literal[MCPTransport.sse, MCPTransport.http, MCPTransport.stdio]
-MCPSpecVersionType = Literal[
-    MCPSpecVersion.nov_2024, MCPSpecVersion.mar_2025, MCPSpecVersion.jun_2025
-]
+MCPSpecVersionType = Literal[MCPSpecVersion.nov_2024, MCPSpecVersion.mar_2025, MCPSpecVersion.jun_2025]
 MCPAuthType = Optional[
     Literal[
         MCPAuth.none,
@@ -50,6 +51,9 @@ MCPAuthType = Optional[
         MCPAuth.basic,
         MCPAuth.authorization,
         MCPAuth.oauth2,
+        MCPAuth.aws_sigv4,
+        MCPAuth.token,
+        MCPAuth.oauth2_token_exchange,
     ]
 ]
 
@@ -63,11 +67,14 @@ class MCPPublicServer(BaseModel):
     name: str
     alias: Optional[str] = None
     server_name: Optional[str] = None
-    url: Optional[str] = None
     transport: MCPTransportType
     spec_path: Optional[str] = None
     auth_type: Optional[MCPAuthType] = None
     mcp_info: Optional[Dict[str, Any]] = None
+
+
+# OAuth 2.0 token-endpoint client authentication method (RFC 6749 section 2.3.1).
+MCPTokenEndpointAuthMethod = Literal["client_secret_basic", "client_secret_post"]
 
 
 class MCPCredentials(TypedDict, total=False):
@@ -89,6 +96,50 @@ class MCPCredentials(TypedDict, total=False):
     scopes: Optional[List[str]]
     """
     OAuth 2.0 scopes to request when exchanging the client credentials
+    """
+
+    # AWS SigV4 fields
+    aws_access_key_id: Optional[str]
+    """AWS access key ID for SigV4 signing. Optional — falls back to boto3 credential chain."""
+
+    aws_secret_access_key: Optional[str]
+    """AWS secret access key for SigV4 signing. Optional — falls back to boto3 credential chain."""
+
+    aws_session_token: Optional[str]
+    """AWS session token for temporary STS credentials. Optional."""
+
+    aws_region_name: Optional[str]
+    """AWS region for SigV4 signing (e.g., 'us-east-1'). Not a secret — stored unencrypted."""
+
+    aws_service_name: Optional[str]
+    """AWS service name for SigV4 signing (e.g., 'bedrock-agentcore'). Not a secret — stored unencrypted."""
+
+    aws_role_name: Optional[str]
+    """IAM role ARN for STS AssumeRole (e.g., 'arn:aws:iam::123456789012:role/MyRole'). Not a secret — stored unencrypted."""
+
+    aws_session_name: Optional[str]
+    """Session name for STS AssumeRole (used in CloudTrail). Not a secret — stored unencrypted."""
+
+    audience: Optional[str]
+    """
+    Target audience for OAuth 2.0 Token Exchange (RFC 8693)
+    """
+
+    token_exchange_endpoint: Optional[str]
+    """
+    IDP token endpoint for OAuth 2.0 Token Exchange (RFC 8693)
+    """
+
+    subject_token_type: Optional[str]
+    """
+    Subject token type for OAuth 2.0 Token Exchange (RFC 8693).
+    Default: urn:ietf:params:oauth:token-type:access_token
+    """
+
+    token_endpoint_auth_method: Optional[MCPTokenEndpointAuthMethod]
+    """
+    How the gateway authenticates to the upstream token endpoint. "client_secret_basic"
+    sends HTTP Basic; defaults to "client_secret_post" when unset.
     """
 
 
@@ -171,7 +222,5 @@ class MCPPostCallResponseObject(BaseModel):
     Pydantic object used for MCP post_call_hook response
     """
 
-    mcp_tool_call_response: List[
-        Union[MCPTextContent, MCPImageContent, MCPEmbeddedResource]
-    ]
+    mcp_tool_call_response: List[Union[MCPTextContent, MCPImageContent, MCPEmbeddedResource]]
     hidden_params: HiddenParams

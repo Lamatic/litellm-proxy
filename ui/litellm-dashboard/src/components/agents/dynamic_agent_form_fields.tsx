@@ -15,9 +15,7 @@ interface DynamicAgentFormFieldsProps {
  * Renders common fields (agent name, display name, description) plus
  * credential fields defined by the agent type metadata.
  */
-const DynamicAgentFormFields: React.FC<DynamicAgentFormFieldsProps> = ({
-  agentTypeInfo,
-}) => {
+const DynamicAgentFormFields: React.FC<DynamicAgentFormFieldsProps> = ({ agentTypeInfo }) => {
   return (
     <>
       <Form.Item
@@ -29,11 +27,7 @@ const DynamicAgentFormFields: React.FC<DynamicAgentFormFieldsProps> = ({
         <Input placeholder="e.g., my-langgraph-agent" />
       </Form.Item>
 
-      <Form.Item
-        label="Description"
-        name="description"
-        tooltip="Brief description of what this agent does"
-      >
+      <Form.Item label="Description" name="description" tooltip="Brief description of what this agent does">
         <Input.TextArea rows={2} placeholder="Describe what this agent does..." />
       </Form.Item>
 
@@ -77,10 +71,7 @@ const DynamicAgentFormFields: React.FC<DynamicAgentFormFieldsProps> = ({
  * Builds agent data from form values for dynamic agent types.
  * Uses configuration from agentTypeInfo to determine which fields to include.
  */
-export const buildDynamicAgentData = (
-  values: any,
-  agentTypeInfo: AgentCreateInfo
-) => {
+export const buildDynamicAgentData = (values: any, agentTypeInfo: AgentCreateInfo) => {
   // Build litellm_params from template
   const litellmParams: Record<string, any> = {
     ...(agentTypeInfo.litellm_params_template || {}),
@@ -118,7 +109,7 @@ export const buildDynamicAgentData = (
     litellmParams.model = model;
   }
 
-  return {
+  const agentData: Record<string, any> = {
     agent_name: values.agent_name,
     agent_card_params: {
       protocolVersion: "1.0",
@@ -131,16 +122,24 @@ export const buildDynamicAgentData = (
       capabilities: {
         streaming: true,
       },
-      skills: [{
-        id: "chat",
-        name: "Chat",
-        description: "General chat capability",
-        tags: ["chat", "conversation"],
-      }],
+      skills: [
+        {
+          id: "chat",
+          name: "Chat",
+          description: "General chat capability",
+          tags: ["chat", "conversation"],
+        },
+      ],
     },
     litellm_params: litellmParams,
   };
+
+  if (values.tpm_limit != null) agentData.tpm_limit = values.tpm_limit;
+  if (values.rpm_limit != null) agentData.rpm_limit = values.rpm_limit;
+  if (values.session_tpm_limit != null) agentData.session_tpm_limit = values.session_tpm_limit;
+  if (values.session_rpm_limit != null) agentData.session_rpm_limit = values.session_rpm_limit;
+
+  return agentData;
 };
 
 export default DynamicAgentFormFields;
-

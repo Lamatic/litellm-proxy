@@ -1,9 +1,10 @@
 import asyncio
 import contextlib
 import os
+import ssl
 import typing
 import urllib.request
-from typing import Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 import aiohttp
 import aiohttp.client_exceptions
@@ -111,6 +112,16 @@ class AiohttpResponseStream(httpx.AsyncByteStream):
             # For other exceptions, use the normal mapping
             with map_aiohttp_exceptions():
                 raise
+        finally:
+            # Release the aiohttp connection when iteration ends for any
+            # reason (read timeout, cancellation from a client disconnect,
+            # GeneratorExit). Without this, abnormally terminated streams
+            # permanently hold a slot in the TCPConnector pool; once the
+            # pool is exhausted every request to that host times out (408)
+            # until the proxy is restarted, even after the backend recovers.
+            # On a fully-read response the connection was already released
+            # at EOF and close() is a no-op.
+            self._aiohttp_response.close()
 
     async def aclose(self) -> None:
         with map_aiohttp_exceptions():
@@ -118,8 +129,13 @@ class AiohttpResponseStream(httpx.AsyncByteStream):
 
 
 class AiohttpTransport(httpx.AsyncBaseTransport):
-    def __init__(self, client: Union[ClientSession, Callable[[], ClientSession]]) -> None:
+    def __init__(
+        self,
+        client: Union[ClientSession, Callable[[], ClientSession]],
+        owns_session: bool = True,
+    ) -> None:
         self.client = client
+        self._owns_session = owns_session
 
         #########################################################
         # Class variables for proxy settings
@@ -127,7 +143,7 @@ class AiohttpTransport(httpx.AsyncBaseTransport):
         self.proxy_cache: Dict[str, Optional[str]] = {}
 
     async def aclose(self) -> None:
-        if isinstance(self.client, ClientSession):
+        if self._owns_session and isinstance(self.client, ClientSession):
             await self.client.close()
 
 
@@ -139,9 +155,15 @@ class LiteLLMAiohttpTransport(AiohttpTransport):
     Credit to: https://github.com/karpetrosyan/httpx-aiohttp for this implementation
     """
 
-    def __init__(self, client: Union[ClientSession, Callable[[], ClientSession]]):
+    def __init__(
+        self,
+        client: Union[ClientSession, Callable[[], ClientSession]],
+        ssl_verify: Optional[Union[bool, ssl.SSLContext]] = None,
+        owns_session: bool = True,
+    ):
         self.client = client
-        super().__init__(client=client)
+        self._ssl_verify = ssl_verify  # Store for per-request SSL override
+        super().__init__(client=client, owns_session=owns_session)
         # Store the client factory for recreating sessions when needed
         if callable(client):
             self._client_factory = client
@@ -214,6 +236,7 @@ class LiteLLMAiohttpTransport(AiohttpTransport):
         timeout: dict,
         proxy: Optional[str],
         sni_hostname: Optional[str],
+        ssl_verify: Optional[Union[bool, ssl.SSLContext]] = None,
     ) -> ClientResponse:
         """
         Helper function to make an aiohttp request with the given parameters.
@@ -224,6 +247,7 @@ class LiteLLMAiohttpTransport(AiohttpTransport):
             timeout: Timeout settings dict with 'connect', 'read', 'pool' keys
             proxy: Optional proxy URL
             sni_hostname: Optional SNI hostname for SSL
+            ssl_verify: Optional SSL verification setting (False to disable, SSLContext for custom)
 
         Returns:
             ClientResponse from aiohttp
@@ -232,26 +256,36 @@ class LiteLLMAiohttpTransport(AiohttpTransport):
         from yarl import URL as YarlURL
 
         try:
-            data = request.content
+            # Coerce an empty body to None so aiohttp does not attach a
+            # `Content-Type: application/octet-stream` header for bodyless
+            # requests (e.g. DELETE /responses/{id}), which upstream APIs reject.
+            data = request.content or None
         except httpx.RequestNotRead:
             data = request.stream  # type: ignore
             request.headers.pop("transfer-encoding", None)  # handled by aiohttp
 
-        response = await client_session.request(
-            method=request.method,
-            url=YarlURL(str(request.url), encoded=True),
-            headers=request.headers,
-            data=data,
-            allow_redirects=False,
-            auto_decompress=False,
-            timeout=ClientTimeout(
+        # Only pass ssl kwarg when explicitly configured, to avoid
+        # overriding the session/connector defaults with None (which is
+        # not a valid value for aiohttp's ssl parameter).
+        request_kwargs: Dict[str, Any] = {
+            "method": request.method,
+            "url": YarlURL(str(request.url), encoded=True),
+            "headers": request.headers,
+            "data": data,
+            "allow_redirects": False,
+            "auto_decompress": False,
+            "timeout": ClientTimeout(
                 sock_connect=timeout.get("connect"),
                 sock_read=timeout.get("read"),
                 connect=timeout.get("pool"),
             ),
-            proxy=proxy,
-            server_hostname=sni_hostname,
-        ).__aenter__()
+            "proxy": proxy,
+            "server_hostname": sni_hostname,
+        }
+        if ssl_verify is not None:
+            request_kwargs["ssl"] = ssl_verify
+
+        response = await client_session.request(**request_kwargs).__aenter__()
 
         return response
 
@@ -268,6 +302,9 @@ class LiteLLMAiohttpTransport(AiohttpTransport):
         # Resolve proxy settings from environment variables
         proxy = await self._get_proxy_settings(request)
 
+        # Use stored SSL configuration for per-request override
+        ssl_config = self._ssl_verify
+
         try:
             with map_aiohttp_exceptions():
                 response = await self._make_aiohttp_request(
@@ -276,6 +313,7 @@ class LiteLLMAiohttpTransport(AiohttpTransport):
                     timeout=timeout,
                     proxy=proxy,
                     sni_hostname=sni_hostname,
+                    ssl_verify=ssl_config,
                 )
         except RuntimeError as e:
             # Handle the case where session was closed between our check and actual use
@@ -296,6 +334,7 @@ class LiteLLMAiohttpTransport(AiohttpTransport):
                         timeout=timeout,
                         proxy=proxy,
                         sni_hostname=sni_hostname,
+                        ssl_verify=ssl_config,
                     )
             else:
                 # Re-raise if it's a different RuntimeError
@@ -304,7 +343,7 @@ class LiteLLMAiohttpTransport(AiohttpTransport):
         return httpx.Response(
             status_code=response.status,
             headers=response.headers,
-            content=AiohttpResponseStream(response),
+            stream=AiohttpResponseStream(response),
             request=request,
         )
 

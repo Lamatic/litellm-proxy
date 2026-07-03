@@ -11,25 +11,27 @@ vi.mock("@/components/networking", () => ({
   updateGuardrailCall: vi.fn(),
 }));
 
-
 // Mock ContentFilterManager
 vi.mock("./content_filter/ContentFilterManager", () => ({
   __esModule: true,
   default: ({ onUnsavedChanges, onDataChange, isEditing }: any) => (
     <div data-testid="mock-content-filter-manager">
       {isEditing && (
-        <button onClick={() => {
-          onUnsavedChanges(true);
-          onDataChange?.(["new_pattern"], ["new_word"]);
-        }}>
+        <button
+          onClick={() => {
+            onUnsavedChanges(true);
+            onDataChange?.(["new_pattern"], ["new_word"], []);
+          }}
+        >
           Simulate Change
         </button>
       )}
     </div>
   ),
-  formatContentFilterDataForAPI: (patterns: any[], blockedWords: any[]) => ({
+  formatContentFilterDataForAPI: (patterns: any[], blockedWords: any[], categories?: any[]) => ({
     patterns,
     blocked_words: blockedWords,
+    categories: categories ?? [],
   }),
 }));
 
@@ -197,7 +199,7 @@ describe("Guardrail Info", () => {
     vi.mocked(networking.updateGuardrailCall).mockResolvedValue({ status: "success" });
 
     const { getByText, getByRole, getAllByRole, getByLabelText } = render(
-      <GuardrailInfoView guardrailId="123" onClose={() => { }} accessToken="123" isAdmin={true} />,
+      <GuardrailInfoView guardrailId="123" onClose={() => {}} accessToken="123" isAdmin={true} />,
     );
 
     await waitFor(() => {
@@ -233,7 +235,7 @@ describe("Guardrail Info", () => {
     // Verify attributes that definitely changed
     expect(firstCallArgs.guardrail_name).toBe("Updated Name");
 
-    // litellm_params might be undefined if empty, which is correct. 
+    // litellm_params might be undefined if empty, which is correct.
     // If it exists, ensure patterns/blocked_words are not in it.
     if (firstCallArgs.litellm_params) {
       expect(firstCallArgs.litellm_params.patterns).toBeUndefined();

@@ -63,7 +63,8 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
     isLoading: isProviderMetadataLoading,
     error: providerMetadataError,
   } = useProviderFields();
-  const { data: guardrailsList, isLoading: isGuardrailsLoading, error: guardrailsError } = useGuardrails();
+  const { data: guardrailsData } = useGuardrails();
+  const guardrailsList = guardrailsData?.guardrails.map((g) => g.guardrail_name);
   const { data: tagsList, isLoading: isTagsLoading, error: tagsError } = useTags();
 
   const handleTestConnection = async () => {
@@ -131,7 +132,6 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                   tooltip="Select the team for which you want to add this model"
                 >
                   <TeamDropdown
-                    teams={teams}
                     onChange={(value) => {
                       setTeamAdminSelectedTeam(value);
                     }}
@@ -266,9 +266,9 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                       return (
                         <>
                           <div className="flex items-center my-4">
-                            <div className="flex-grow border-t border-gray-200"></div>
+                            <div className="grow border-t border-gray-200"></div>
                             <span className="px-4 text-gray-500 text-sm">OR</span>
-                            <div className="flex-grow border-t border-gray-200"></div>
+                            <div className="grow border-t border-gray-200"></div>
                           </div>
                           <ProviderSpecificFields selectedProvider={selectedProvider} uploadProps={uploadProps} />
                         </>
@@ -278,9 +278,9 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                   }}
                 </Form.Item>
                 <div className="flex items-center my-4">
-                  <div className="flex-grow border-t border-gray-200"></div>
+                  <div className="grow border-t border-gray-200"></div>
                   <span className="px-4 text-gray-500 text-sm">Additional Model Info Settings</span>
-                  <div className="flex-grow border-t border-gray-200"></div>
+                  <div className="grow border-t border-gray-200"></div>
                 </div>
                 {/* Team-only Model Switch - Only show for proxy admins, not team admins */}
                 {(isAdmin || !isTeamAdmin) && (
@@ -325,7 +325,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                       },
                     ]}
                   >
-                    <TeamDropdown teams={teams} disabled={!premiumUser} />
+                    <TeamDropdown disabled={!premiumUser} />
                   </Form.Item>
                 )}
                 {isAdmin && (
@@ -358,6 +358,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                   teams={teams}
                   guardrailsList={guardrailsList || []}
                   tagsList={tagsList || {}}
+                  accessToken={accessToken || ""}
                 />
               </>
             )}
@@ -366,10 +367,12 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                 <Typography.Link href="https://github.com/BerriAI/litellm/issues">Need Help?</Typography.Link>
               </Tooltip>
               <div className="space-x-2">
-                <Button onClick={handleTestConnection} loading={isTestingConnection}>
+                <Button data-testid="test-connect-btn" onClick={handleTestConnection} loading={isTestingConnection}>
                   Test Connect
                 </Button>
-                <Button htmlType="submit">Add Model</Button>
+                <Button data-testid="add-model-btn" htmlType="submit">
+                  Add Model
+                </Button>
               </div>
             </div>
           </>

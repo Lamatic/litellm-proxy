@@ -547,7 +547,7 @@ const UsagePage: React.FC<UsagePageProps> = ({ accessToken, token, userRole, use
             Please follow our guide to view usage when SpendLogs has more than 1M rows.
           </Text>
           <Button className="mt-4">
-            <a href="https://docs.litellm.ai/docs/proxy/spending_monitoring" target="_blank">
+            <a href="https://docs.litellm.ai/docs/proxy/cost_tracking" target="_blank">
               View Usage Guide
             </a>
           </Button>
@@ -583,7 +583,7 @@ const UsagePage: React.FC<UsagePageProps> = ({ accessToken, token, userRole, use
               </TabList>
               <TabPanels>
                 <TabPanel>
-                  <Grid numItems={2} className="gap-2 h-[100vh] w-full">
+                  <Grid numItems={2} className="gap-2 h-screen w-full">
                     <Col numColSpan={2}>
                       <Text className="text-tremor-default text-tremor-content dark:text-dark-tremor-content mb-2 mt-2 text-lg">
                         Project Spend {new Date().toLocaleString("default", { month: "long" })} 1 -{" "}

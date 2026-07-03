@@ -38,8 +38,11 @@ export interface passThroughItem {
   headers: object;
   include_subpath?: boolean;
   cost_per_request?: number;
+  timeout?: number;
   auth?: boolean;
+  methods?: string[];
   guardrails?: Record<string, { request_fields?: string[]; response_fields?: string[] } | null>;
+  default_query_params?: Record<string, string>;
 }
 
 // Password field component for headers
@@ -50,14 +53,20 @@ const PasswordField: React.FC<{ value: object }> = ({ value }) => {
   return (
     <div className="flex items-center space-x-2">
       <span className="font-mono text-xs">{showPassword ? headerString : "••••••••"}</span>
-      <button onClick={() => setShowPassword(!showPassword)} className="p-1 hover:bg-gray-100 rounded" type="button">
+      <button onClick={() => setShowPassword(!showPassword)} className="p-1 hover:bg-gray-100 rounded-sm" type="button">
         {showPassword ? <EyeOff className="w-4 h-4 text-gray-500" /> : <Eye className="w-4 h-4 text-gray-500" />}
       </button>
     </div>
   );
 };
 
-const PassThroughSettings: React.FC<GeneralSettingsPageProps> = ({ accessToken, userRole, userID, modelData, premiumUser }) => {
+const PassThroughSettings: React.FC<GeneralSettingsPageProps> = ({
+  accessToken,
+  userRole,
+  userID,
+  modelData,
+  premiumUser,
+}) => {
   const [generalSettings, setGeneralSettings] = useState<passThroughItem[]>([]);
   const [selectedEndpointId, setSelectedEndpointId] = useState<string | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -146,6 +155,32 @@ const PassThroughSettings: React.FC<GeneralSettingsPageProps> = ({ accessToken, 
       header: "Target",
       accessorKey: "target",
       cell: (info: any) => <Text>{info.getValue()}</Text>,
+    },
+    {
+      header: () => (
+        <div className="flex items-center gap-1">
+          <span>Methods</span>
+          <Tooltip title="HTTP methods supported by this endpoint">
+            <InformationCircleIcon className="w-4 h-4 text-gray-400 cursor-help" />
+          </Tooltip>
+        </div>
+      ),
+      accessorKey: "methods",
+      cell: (info: any) => {
+        const methods = info.getValue();
+        if (!methods || methods.length === 0) {
+          return <Badge color="blue">ALL</Badge>;
+        }
+        return (
+          <div className="flex flex-wrap gap-1">
+            {methods.map((method: string) => (
+              <Badge key={method} color="indigo" className="text-xs">
+                {method}
+              </Badge>
+            ))}
+          </div>
+        );
+      },
     },
     {
       header: () => (

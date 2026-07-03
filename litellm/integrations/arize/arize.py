@@ -28,6 +28,41 @@ else:
 
 
 class ArizeLogger(OpenTelemetry):
+    """
+    Arize logger that sends traces to an Arize endpoint.
+
+    Creates its own dedicated TracerProvider so it can coexist with the
+    generic ``otel`` callback (or any other OTEL-based integration) without
+    fighting over the global ``opentelemetry.trace`` TracerProvider singleton.
+    """
+
+    def _init_tracing(self, tracer_provider):
+        """
+        Override to always create a *private* TracerProvider for Arize.
+
+        See ArizePhoenixLogger._init_tracing for full rationale.
+        """
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.trace import SpanKind
+
+        if tracer_provider is not None:
+            self.tracer = tracer_provider.get_tracer("litellm")
+            self.span_kind = SpanKind
+            return
+
+        provider = TracerProvider(resource=self._get_litellm_resource(self.config))
+        provider.add_span_processor(self._get_span_processor())
+        self.tracer = provider.get_tracer("litellm")
+        self.span_kind = SpanKind
+
+    def _init_otel_logger_on_litellm_proxy(self):
+        """
+        Override: Arize should NOT overwrite the proxy's
+        ``open_telemetry_logger``.  That attribute is reserved for the
+        primary ``otel`` callback which handles proxy-level parent spans.
+        """
+        pass
+
     def set_attributes(self, span: Span, kwargs, response_obj: Optional[Any]):
         ArizeLogger.set_arize_attributes(span, kwargs, response_obj)
         return
@@ -160,20 +195,14 @@ class ArizeLogger(OpenTelemetry):
         # the suggested param is `arize_space_key`
         #########################################################
         if standard_callback_dynamic_params.get("arize_space_id"):
-            dynamic_headers["arize-space-id"] = standard_callback_dynamic_params.get(
-                "arize_space_id"
-            )
+            dynamic_headers["arize-space-id"] = standard_callback_dynamic_params.get("arize_space_id")
         if standard_callback_dynamic_params.get("arize_space_key"):
-            dynamic_headers["arize-space-id"] = standard_callback_dynamic_params.get(
-                "arize_space_key"
-            )
+            dynamic_headers["arize-space-id"] = standard_callback_dynamic_params.get("arize_space_key")
 
         #########################################################
         # `api_key` handling
         #########################################################
         if standard_callback_dynamic_params.get("arize_api_key"):
-            dynamic_headers["api_key"] = standard_callback_dynamic_params.get(
-                "arize_api_key"
-            )
+            dynamic_headers["api_key"] = standard_callback_dynamic_params.get("arize_api_key")
 
         return dynamic_headers
